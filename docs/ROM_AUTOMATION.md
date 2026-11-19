@@ -78,6 +78,7 @@ outside the run directory or arbitrary memory writes). Each step has an
 | `screenshot` | `{"action":"screenshot","name":"walk"}` | Save native screenshot in the run directory |
 | `assert_visible` | `{"action":"assert_visible","image":"walk","min_color_spread":35}` | Reject blank/uniform images |
 | `assert_changed` | `{"action":"assert_changed","before":"spawn","after":"walk","min_difference":1.5}` | Detect image movement |
+| `assert_movement` | `{"action":"assert_movement","idle_before":"idle1","before":"idle2","after":"walk","ratio":1.8}` | Check walking changes the image more than idle animation/title fading |
 | `assert_no_fault` | `{"action":"assert_no_fault","image":"walk"}` | OCR and reject recognizable N64 exception screens |
 | `assert_text` | `{"action":"assert_text","image":"walk","contains":"PALLET"}` | Assert readable HUD/menu text |
 | `assert_status` | `{"action":"assert_status"}` | Check emulator still playing |
@@ -92,8 +93,9 @@ A to RetroPad B and N64 B to RetroPad Y. The C-buttons can differ with
 claiming a deterministic battle scenario.
 
 `tests/rom_scenarios/pallet_smoke.json` is the first end-to-end fixture.
-It boots, captures a reference frame, moves Link forward, captures again,
-checks for a material visual change, and checks both screenshots for
+It boots, waits for the title banner to settle, captures two idle
+reference frames, moves Link forward, captures again, and verifies the movement
+diff exceeds the idle animation/title-card drift. The test also checks for
 OoT's exception overlays.
 
 ### Limitations and future precision
