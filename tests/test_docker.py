@@ -277,7 +277,7 @@ class DockerBuildTests(unittest.TestCase):
              contextlib.redirect_stdout(io.StringIO()):
             docker_rom.main()
         select.assert_called_once_with(self.base, self.roms)
-        launch.assert_called_once_with(self.base, 2)
+        launch.assert_called_once_with(self.base, 2, control_boot=False)
 
 
 if __name__ == "__main__":
