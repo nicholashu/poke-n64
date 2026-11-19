@@ -13,7 +13,7 @@ make test
 # Validate the scripted scenario without launching anything.
 python3 tools/retroarch_e2e.py --check-only
 
-# Launch the existing ROM, test boot and move Link with an analogue stick.
+# Launch the existing ROM, test boot and move Link with the verified W-key binding.
 make test-rom
 
 # Rebuild the ROM from the locally provided Zelda dump, then test it.
@@ -46,7 +46,7 @@ and RetroArch logs and a machine-readable `report.json`. The harness:
    `127.0.0.1` (never a hosted service).
 4. Waits for a `GET_STATUS PLAYING` response and confirms the configured
    cartridge SRAM path is the fresh session directory.
-5. Sends real latched RetroPad button and analog stick states. It can
+5. Sends real latched RetroPad button and analog stick states, or targeted\n   macOS keyboard events to the test-owned RetroArch PID. It can
    request native framebuffer PNG screenshots, assert pixel changes, check
    the displayed text or look for N64 fault overlays.
 6. Releases all inputs and quits **only the RetroArch process it started**.
@@ -74,7 +74,7 @@ outside the run directory or arbitrary memory writes). Each step has an
 | `press` | `{"action":"press","buttons":["l","r"]}` | Latch multiple buttons down |
 | `release` | `{"action":"release","buttons":["l","r"]}` | Release specified buttons |
 | `release_all` | `{"action":"release_all"}` | Center axes, release every button |
-| `stick` | `{"action":"stick","stick":"left","x":0,"y":-25000,"seconds":1.5}` | Move joystick (int16 X/Y) then center |
+| `stick` | `{"action":"stick","stick":"left","x":0,"y":-25000,"seconds":1.5}` | Send Remote RetroPad analog axis (core-dependent) |\n| `key_hold` | `{"action":"key_hold","keycode":13,"seconds":2.5}` | Hold macOS virtual keycode 13 (W) in the exact test-owned emulator PID, then release |
 | `screenshot` | `{"action":"screenshot","name":"walk"}` | Save native screenshot in the run directory |
 | `assert_visible` | `{"action":"assert_visible","image":"walk","min_color_spread":35}` | Reject blank/uniform images |
 | `assert_changed` | `{"action":"assert_changed","before":"spawn","after":"walk","min_difference":1.5}` | Detect image movement |
@@ -95,12 +95,12 @@ claiming a deterministic battle scenario.
 `tests/rom_scenarios/pallet_smoke.json` is the first end-to-end fixture.
 It boots, waits for the title banner to settle, captures two idle
 reference frames, moves Link forward, captures again, and verifies the movement
-diff exceeds the idle animation/title-card drift. The test also checks for
+diff exceeds the idle animation/title-card drift. On the current macOS\nParallel Launcher build, Remote RetroPad UDP analog packets reach the frontend\nbut have not reliably moved Link, so the smoke uses the verified `W` keyboard\nbinding via `tools/retroarch_keys.swift` (macOS Accessibility permission\nrequired). The raw `stick` action remains available for protocol experiments. The test also checks for
 OoT's exception overlays.
 
 ### Limitations and future precision
 
-Analog movement uses real wall-clock durations rather than an exact frame
+Controller/keyboard movement uses real wall-clock durations rather than an exact frame
 counter. The harness supports paused `FRAMEADVANCE` for finer experiments,
 but RetroArch applies remote input datagrams one per frame, so simultaneous
 presses are delivered across successive frames. Screenshots and OCR test
