@@ -24,6 +24,8 @@ MAX_VERTEX_PER_BATCH = 32
 MAX_VERTICES_PER_FRAME = 12000
 MAX_TEXTURE_PIXELS = 2048
 MAX_FRAMES = 12
+MAX_BAKED_VERTEX_BYTES = 1_310_720  # 1.25 MiB of vertex frames across two clips
+MAX_TEXTURE_BYTES = 524_288
 NONE = 65535
 
 
@@ -161,9 +163,22 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
     if not tex:
         raise StadiumExportError("No textures in Stadium model")
     count = len(flat_vertices)
+    total_texture_bytes = sum(len(pixels) * 2 for _, _, pixels in tex)
+    if total_texture_bytes > MAX_TEXTURE_BYTES:
+        raise StadiumExportError(
+            f"Textures require {total_texture_bytes} bytes; N64 budget is {MAX_TEXTURE_BYTES}"
+        )
+    # Resident OoT code, graphics buffers and Zelda scene assets also need RAM.
+    # Keep Bulbasaur's two baked clips within a predictable 1.25 MiB budget.
+    budget_frames = MAX_BAKED_VERTEX_BYTES // (count * 16 * 2)
+    if budget_frames < 2:
+        raise StadiumExportError(
+            "Model geometry is too large for two animated clips; simplify it first"
+        )
+    sample_limit = min(max_frames, budget_frames)
     per_clip = []
     for clip_name in ("idle", "attack_default"):
-        animation, sample_indices = _source_frames(model, clip_name, max_frames)
+        animation, sample_indices = _source_frames(model, clip_name, sample_limit)
         frames = []
         for sampled in sample_indices:
             matrices = _bone_global_matrices(_pose_bones(model, animation, sampled), factor)
@@ -286,6 +301,8 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
         "triangles": len(faces), "textureCount": len(tex),
         "frameCounts": {label: len(frames) for label, frames, _ in per_clip},
         "sampleFrames": {label: samples for label, _, samples in per_clip},
+        "bakedVertexBytes": count * 16 * sum(len(frames) for _, frames, _ in per_clip),
+        "textureBytes": total_texture_bytes,
         "note": "private generated C, skeleton animation baked into per-frame N64 Vtx arrays",
     }
 
