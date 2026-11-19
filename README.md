@@ -89,6 +89,34 @@ make play ARGS="--seed 1 --save adventure.sav --no-clear"
 
 ## Build the native N64 target
 
+### Native Pallet Town scene (experimental)
+
+The `feat/pallet-town-native-scene` branch boots Link into **a new original
+Pallet Town scene** rather than using the Kokiri Forest level geometry. It
+retains OoT's player/camera/scene loader and uses native static collision for
+Red's house, the rival's house, Oak's lab, trees and town boundaries.
+
+```sh
+git fetch origin
+git switch feat/pallet-town-native-scene
+make stadium-n64   # reuse the previously exported private Bulbasaur DSM pack
+make rom-oot-docker
+```
+
+Open `build/poke-n64-oot.z64` in ParaLLEl N64 with F3DEX3 graphics.
+Bulbasaur is now **stationary in town**, rather than following Link.
+The wild Rattata test still uses the temporary original proxy geometry.
+
+The first Pallet Town pass is shaded low-poly geometry, not a textured
+1:1 reconstruction of Red/Blue, and doors are decorative until connected
+to indoor scenes. The experimental scene keeps Kokiri's **internal entrance
+ID** only as an engineering shortcut; it substitutes new scene and room
+ROM payloads rather than showing the forest behind the new level.
+
+See [Pallet Town scene details](docs/PALLET_TOWN.md). This feature has
+ROM-free geometry/collision tests and MIPS compilation, but the full native
+ROM still needs an emulator runtime check with your source OoT ROM.
+
 ## Faster ROM builds
 
 From the `feat/incremental-rom-build` branch, **the first build extracts the
