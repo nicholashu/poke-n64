@@ -9,7 +9,7 @@ HOST = build/poke-n64
 # Export paths verbatim rather than interpolating filenames into a shell command.
 export POKE_N64_ROM := $(ROM)
 
-.PHONY: all play test sanitize check-native check-native-docker check-rom engine rom rom-docker rom-control-docker clean help
+.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-control-docker clean help
 all: $(HOST)
 
 build:
@@ -48,6 +48,9 @@ check-native:
 check-native-docker:
 	$(PYTHON) tools/docker_rom.py --check-tools
 
+check-native-oot-docker:
+	$(PYTHON) tools/docker_rom.py --check-tools --oot-conversion
+
 check-rom:
 	$(PYTHON) tools/build_rom.py --check
 
@@ -56,6 +59,9 @@ rom:
 
 rom-docker:
 	$(PYTHON) tools/docker_rom.py
+
+rom-oot-docker:
+	$(PYTHON) tools/docker_rom.py --oot-conversion
 
 rom-control-docker:
 	$(PYTHON) tools/docker_rom.py --control-boot
@@ -72,5 +78,7 @@ help:
 	@echo 'make check-rom             Validate the Zelda image in roms/ without building'
 	@echo 'make rom                   Detect the matching Zelda image in roms/ and build'
 	@echo 'make rom ROM=/path/oot.z64  Build native ROM using your OoT NTSC 1.2 dump'
-	@echo 'make rom-docker            Build in Docker; recommended on macOS'
+	@echo 'make rom-docker            Build original standalone Pokémon prototype'
+	@echo 'make rom-oot-docker        Build Pokémon total conversion on native OoT PlayState'
+	@echo 'make check-native-oot-docker Check native OoT integration without a ROM'
 	@echo 'make rom-control-docker    Build stock-boot diagnostic ROM'

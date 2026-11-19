@@ -50,7 +50,7 @@ def ensure_checkout(engine: Path) -> None:
 
 
 def install(engine: Path, boot_mode: str = "poke") -> None:
-    if boot_mode not in ("poke", "control"):
+    if boot_mode not in ("poke", "control", "oot"):
         raise ValueError("Unknown boot mode")
     ensure_checkout(engine)
     if boot_mode == "control":
@@ -73,6 +73,12 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         return
     old_manifest_path = engine / MANIFEST
     old_manifest = json.loads(old_manifest_path.read_text()) if old_manifest_path.exists() else {}
+    # A previous overlay can leave stale source/object files. Never mix the
+    # standalone prototype and OoT total conversion in one engine checkout.
+    if boot_mode == "oot" and "src/code/poke_state.c" in old_manifest:
+        raise RuntimeError("This checkout contains the legacy overlay. Use a new --engine directory.")
+    if boot_mode == "poke" and "src/code/poke_oot.c" in old_manifest:
+        raise RuntimeError("This checkout contains the OoT conversion. Use a new --engine directory.")
     original: dict[str, bytes] = {}
     outputs: dict[str, bytes] = {}
 
@@ -86,25 +92,66 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         text = outputs[path].decode() if path in outputs else original_text(path)
         outputs[path] = replace_once(text, anchor, replacement, path).encode()
 
-    for path in ("src/code/graph.c", "src/code/z_game_dlftbls.c", "src/code/title_setup.c"):
-        patch(path, '#include "setup_state.h"', '#include "setup_state.h"\n#include "poke_state.h"')
-    patch("src/code/title_setup.c",
-          "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
-          ("SET_NEXT_GAMESTATE(&this->state, Poke_Init, PokeState);" if boot_mode == "poke"
-           else "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);"))
-    path = "include/tables/gamestate_table.h"
-    outputs[path] = (original_text(path).rstrip() +
-                     "\n/* poke-n64: resident custom RPG state */\n"
-                     "DEFINE_GAMESTATE_INTERNAL(Poke, GAMESTATE_POKE)\n").encode()
-    patch("spec/spec", '    include "$(BUILD_DIR)/src/code/title_setup.o"',
-          '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
-          '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
-          '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
-          '    include "$(BUILD_DIR)/src/code/poke_state.o"')
-    patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
-          'ROM_NAME("POKE N64 MVP")' if boot_mode == "poke" else 'ROM_NAME("POKE N64 CONTROL")')
-    patch("src/makerom/rom_header.s", 'GAME_ID("ZL")',
-          'GAME_ID("PK")' if boot_mode == "poke" else 'GAME_ID("PC")')
+    if boot_mode == "oot":
+        # Total conversion uses the REAL Zelda PlayState and camera, not
+        # our custom standalone GameState. Kokiri Forest is temporary.
+        patch("src/code/title_setup.c", '#include "save.h"',
+              '#include "save.h"\n#include "play_state.h"\n#include "sram.h"\n#include "scene.h"')
+        patch("src/code/title_setup.c", "    SaveContext_Init();",
+              "    SaveContext_Init();\n"
+              "    Sram_InitNewSave();\n"
+              "    gSaveContext.fileNum = 0xFF; /* RAM-only engineering save */\n"
+              "    gSaveContext.save.entranceIndex = ENTR_KOKIRI_FOREST_0;\n"
+              "    gSaveContext.save.linkAge = LINK_AGE_CHILD;\n"
+              "    gSaveContext.save.cutsceneIndex = CS_INDEX_NONE;\n"
+              "    gSaveContext.save.dayTime = CLOCK_TIME(10, 0);\n"
+              "    gSaveContext.gameMode = GAMEMODE_NORMAL;")
+        patch("src/code/title_setup.c",
+              "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
+              "SET_NEXT_GAMESTATE(&this->state, Play_Init, PlayState);")
+        patch("src/code/z_play.c", '#include "play_state.h"',
+              '#include "play_state.h"\n#include "poke_oot.h"')
+        patch("src/code/z_play.c", "    this->gameplayFrames = 0;\n}",
+              "    this->gameplayFrames = 0;\n"
+              "    PokeOot_OnSceneEnter(this);\n}")
+        patch("src/code/z_play.c",
+              "        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);",
+              "        Play_Update(this);\n"
+              "        PokeOot_Update(this);\n"
+              "    }\n\n    PLAY_LOG(4583);")
+        patch("src/code/z_play.c",
+              "    Play_Draw(this);\n\n    PLAY_LOG(4587);",
+              "    Play_Draw(this);\n"
+              "    PokeOot_Draw(this);\n\n"
+              "    PLAY_LOG(4587);")
+        patch("spec/spec", '    include "$(BUILD_DIR)/src/code/z_play.o"',
+              '    include "$(BUILD_DIR)/src/code/z_play.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_oot.o"')
+        patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
+              'ROM_NAME("POKEMON RED OOT")')
+        patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PO")')
+    else:
+        # Original standalone proof-of-concept remains unchanged while the
+        # native OoT conversion is developed and tested separately.
+        for path in ("src/code/graph.c", "src/code/z_game_dlftbls.c", "src/code/title_setup.c"):
+            patch(path, '#include "setup_state.h"', '#include "setup_state.h"\n#include "poke_state.h"')
+        patch("src/code/title_setup.c",
+              "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
+              "SET_NEXT_GAMESTATE(&this->state, Poke_Init, PokeState);")
+        path = "include/tables/gamestate_table.h"
+        outputs[path] = (original_text(path).rstrip() +
+                         "\n/* poke-n64: resident custom RPG state */\n"
+                         "DEFINE_GAMESTATE_INTERNAL(Poke, GAMESTATE_POKE)\n").encode()
+        patch("spec/spec", '    include "$(BUILD_DIR)/src/code/title_setup.o"',
+              '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_state.o"')
+        patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
+              'ROM_NAME("POKE N64 MVP")')
+        patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PK")')
     # The upstream stdint header only supplies pointer-sized types. Extend it with
     # standard C fixed widths rather than changing the shared portable sources.
     patch("include/libc/stdint.h", "#define STDINT_H", "#define STDINT_H\n\n"
@@ -113,19 +160,29 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
           "typedef signed int int32_t;\ntypedef unsigned int uint32_t;\n"
           "typedef signed long long int64_t;\ntypedef unsigned long long uint64_t;\n"
           "#define UINT32_C(value) value ## U\n#define INT32_C(value) value\n")
-    patch("include/config/config_memory.h", "#define POLY_OPA_BUFFER_SIZE 0x1A00",
-          "#define POLY_OPA_BUFFER_SIZE 0x3000")
-    patch("include/config/config_memory.h", "#define OVERLAY_BUFFER_SIZE 0x400",
-          "#define OVERLAY_BUFFER_SIZE 0x2000")
+    if boot_mode == "poke":
+        patch("include/config/config_memory.h", "#define POLY_OPA_BUFFER_SIZE 0x1A00",
+              "#define POLY_OPA_BUFFER_SIZE 0x3000")
+        patch("include/config/config_memory.h", "#define OVERLAY_BUFFER_SIZE 0x400",
+              "#define OVERLAY_BUFFER_SIZE 0x2000")
     # Fixed hardware target and low-noise runtime. No asset-dependent map selects.
     outputs[".make_options.mk"] = b"VERSION=ntsc-1.2\nREGION=US\nDEBUG_FEATURES=0\nCOMPILER=gcc\n"
-    copies = {
-        "native/poke_state.c": "src/code/poke_state.c",
-        "native/poke_state.h": "include/poke_state.h",
-        "include/poke.h": "include/poke.h",
-        "src/core.c": "src/code/poke_core.c",
-        "src/save.c": "src/code/poke_save.c",
-    }
+    if boot_mode == "oot":
+        copies = {
+            "native/oot_conversion.c": "src/code/poke_oot.c",
+            "native/oot_conversion.h": "include/poke_oot.h",
+            "include/poke.h": "include/poke.h",
+            "src/core.c": "src/code/poke_core.c",
+            "src/save.c": "src/code/poke_save.c",
+        }
+    else:
+        copies = {
+            "native/poke_state.c": "src/code/poke_state.c",
+            "native/poke_state.h": "include/poke_state.h",
+            "include/poke.h": "include/poke.h",
+            "src/core.c": "src/code/poke_core.c",
+            "src/save.c": "src/code/poke_save.c",
+        }
     for source, target in copies.items():
         outputs[target] = (ROOT / source).read_bytes()
     # Validate every write first: fail without partly applying an overlay.
@@ -147,7 +204,7 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
-    parser.add_argument("--boot-mode", choices=("poke", "control"), default="poke")
+    parser.add_argument("--boot-mode", choices=("poke", "control", "oot"), default="poke")
     args = parser.parse_args()
     try:
         install(args.engine.resolve(), boot_mode=args.boot_mode)

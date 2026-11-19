@@ -88,11 +88,15 @@ def main() -> None:
                         help="folder to scan when no explicit ROM is supplied")
     parser.add_argument("--control-boot", action="store_true",
                         help="build the stock Zelda boot path for diagnosing the custom state")
+    parser.add_argument("--oot-conversion", action="store_true",
+                        help="build Pokémon's native OoT PlayState total-conversion experiment")
     parser.add_argument("--check", action="store_true",
                         help="validate local input only; no downloads, builds or writes")
     parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
     args = parser.parse_args()
+    if args.control_boot and args.oot_conversion:
+        raise RuntimeError("Choose only one boot mode: --control-boot or --oot-conversion")
     # Validate source before cloning, downloading build tools or modifying files.
     path, data = select_rom(args.rom, args.roms_dir)
     print(f"Validated OoT US NTSC 1.2: {path}\nNormalized MD5: {LOCK['base_rom_md5']}", flush=True)
@@ -102,7 +106,8 @@ def main() -> None:
     # Report missing native tools before downloading the engine or copying a ROM.
     make = native_make()
     engine = args.engine.resolve()
-    install(engine, boot_mode="control" if args.control_boot else "poke")
+    mode = "control" if args.control_boot else ("oot" if args.oot_conversion else "poke")
+    install(engine, boot_mode=mode)
     base = engine / "baseroms/ntsc-1.2/baserom.z64"
     if base.exists() and base.read_bytes() != data:
         raise RuntimeError(f"Refusing to overwrite an existing different base ROM at {base}")
@@ -115,7 +120,8 @@ def main() -> None:
     generated = engine / "build/ntsc-1.2/hackeroot-ntsc-1.2-compressed-yaz.z64"
     if not generated.exists():
         raise RuntimeError(f"Build returned success without expected output: {generated}")
-    label = "poke-n64-control" if args.control_boot else "poke-n64"
+    label = ("poke-n64-control" if args.control_boot else
+             "poke-n64-oot" if args.oot_conversion else "poke-n64")
     target = ROOT / f"build/{label}.z64"
     shutil.copyfile(generated, target)
     # The ROM must be independently boot-checksummed before creating the patch.

@@ -70,7 +70,9 @@ def docker_environment() -> tuple[str, str]:
 
 
 def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
-                  control_boot: bool = False) -> None:
+                  control_boot: bool = False, oot_conversion: bool = False) -> None:
+    if control_boot and oot_conversion:
+        raise RuntimeError("The control and OoT conversion modes are mutually exclusive.")
     if base is None and not check_tools:
         raise RuntimeError("A validated base ROM is required.")
     executable, platform = docker_environment()
@@ -78,7 +80,8 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
     image = f"{IMAGE}-{architecture}"
     # The original '-control' checkout was already patched by earlier builds.
     # Use a fresh '-stock' directory for a true unmodified upstream baseline.
-    engine = f"/project/build/docker-engine-{architecture}" + ("-stock" if control_boot else "")
+    engine = (f"/project/build/docker-engine-{architecture}" +
+              ("-stock" if control_boot else "-oot" if oot_conversion else ""))
     jobs = max(1, jobs)
     print(f"Using native Docker platform: {platform}", flush=True)
     # Only the build recipe is sent to the Docker image builder. Source code,
@@ -101,9 +104,12 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
     if check_tools:
         # Exercise the actual host tools and native Python dependencies on each
         # CPU. Object compilation alone cannot reveal host architecture failures.
+        native_check = ["python3", "tools/check_native.py", "--require-mips", "--engine", engine]
+        if oot_conversion:
+            native_check.append("--oot-conversion")
         checks = [
             ["python3", "tools/build_env.py"],
-            ["python3", "tools/check_native.py", "--require-mips", "--engine", engine],
+            native_check,
             ["make", "--directory", engine, "VERSION=ntsc-1.2", "REGION=US",
              "DEBUG_FEATURES=0", f"N_THREADS={jobs}", "venv"],
             ["make", "--directory", engine + "/tools", f"-j{jobs}"],
@@ -121,8 +127,11 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
                 "--engine", engine, "--jobs", str(jobs)]
     if control_boot:
         command.append("--control-boot")
+    if oot_conversion:
+        command.append("--oot-conversion")
     subprocess.run(command, cwd=ROOT, check=True)
-    label = "poke-n64-control" if control_boot else "poke-n64"
+    label = ("poke-n64-control" if control_boot else
+             "poke-n64-oot" if oot_conversion else "poke-n64")
     print(f"Outputs: {ROOT / 'build' / (label + '.z64')} and {ROOT / 'build' / (label + '.bps')}")
 
 
@@ -135,16 +144,22 @@ def main() -> None:
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
     parser.add_argument("--control-boot", action="store_true",
                         help="build a stock-boot control ROM alongside the custom game")
+    parser.add_argument("--oot-conversion", action="store_true",
+                        help="build the PlayState-based Pokémon total conversion")
     parser.add_argument("--check-tools", action="store_true",
                         help="build the image and compile native objects without a ROM")
     args = parser.parse_args()
     if args.check_tools:
-        run_in_docker(None, args.jobs, check_tools=True)
+        if args.oot_conversion:
+            run_in_docker(None, args.jobs, check_tools=True, oot_conversion=True)
+        else:
+            run_in_docker(None, args.jobs, check_tools=True)
     else:
         # Fail on missing or mismatched input before any Docker downloads/writes.
         path, _ = select_rom(args.rom, args.roms_dir)
         print(f"Validated base ROM: {path}", flush=True)
-        run_in_docker(path, args.jobs, control_boot=args.control_boot)
+        run_in_docker(path, args.jobs, control_boot=args.control_boot,
+                      oot_conversion=args.oot_conversion)
 
 
 if __name__ == "__main__":
