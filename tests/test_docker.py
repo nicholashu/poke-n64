@@ -152,7 +152,7 @@ class DockerBuildTests(unittest.TestCase):
             docker_rom.run_in_docker(self.base, 2, control_boot=True)
         build, launch = [call.args[0] for call in self.run.call_args_list]
         self.assertIn("--control-boot", launch)
-        self.assertEqual("/project/build/docker-engine-arm64-control", launch[launch.index("--engine") + 1])
+        self.assertEqual("/project/build/docker-engine-arm64-stock", launch[launch.index("--engine") + 1])
         self.assertEqual("poke-n64-build-arm64", build[build.index("--tag") + 1])
         self.assertIn("poke-n64-control.z64", output.getvalue())
 
