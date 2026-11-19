@@ -104,9 +104,12 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
     if check_tools:
         # Exercise the actual host tools and native Python dependencies on each
         # CPU. Object compilation alone cannot reveal host architecture failures.
+        native_check = ["python3", "tools/check_native.py", "--require-mips", "--engine", engine]
+        if oot_conversion:
+            native_check.append("--oot-conversion")
         checks = [
             ["python3", "tools/build_env.py"],
-            ["python3", "tools/check_native.py", "--require-mips", "--engine", engine],
+            native_check,
             ["make", "--directory", engine, "VERSION=ntsc-1.2", "REGION=US",
              "DEBUG_FEATURES=0", f"N_THREADS={jobs}", "venv"],
             ["make", "--directory", engine + "/tools", f"-j{jobs}"],
@@ -147,7 +150,10 @@ def main() -> None:
                         help="build the image and compile native objects without a ROM")
     args = parser.parse_args()
     if args.check_tools:
-        run_in_docker(None, args.jobs, check_tools=True)
+        if args.oot_conversion:
+            run_in_docker(None, args.jobs, check_tools=True, oot_conversion=True)
+        else:
+            run_in_docker(None, args.jobs, check_tools=True)
     else:
         # Fail on missing or mismatched input before any Docker downloads/writes.
         path, _ = select_rom(args.rom, args.roms_dir)
