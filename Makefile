@@ -34,8 +34,8 @@ build/test-pallet-import: src/pallet_import.c tests/test_pallet_import.c include
 build/poke_world.c: tools/kanto_layout.py assets/maps/pallet_opening.json | build
 	$(PYTHON) tools/kanto_layout.py --output $@
 
-build/test-intro: $(CORE) src/intro.c tests/test_intro.c include/poke_intro.h $(HEADERS) build/poke_world.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) $(CORE) src/intro.c build/poke_world.c tests/test_intro.c -o $@
+build/test-intro: $(CORE) src/intro.c native/pallet_import_stub.c tests/test_intro.c include/poke_intro.h $(HEADERS) build/poke_world.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) $(CORE) src/intro.c native/pallet_import_stub.c build/poke_world.c tests/test_intro.c -o $@
 
 play: $(HOST)
 	./$(HOST) $(ARGS)
@@ -55,7 +55,7 @@ sanitize: build/poke_world.c | build
 	./build/test-save-sanitize
 	$(CC) $(CPPFLAGS) $(WARNINGS) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer src/pallet_import.c tests/test_pallet_import.c -o build/test-pallet-import-sanitize
 	./build/test-pallet-import-sanitize
-	$(CC) $(CPPFLAGS) $(WARNINGS) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer $(CORE) src/intro.c build/poke_world.c tests/test_intro.c -o build/test-intro-sanitize
+	$(CC) $(CPPFLAGS) $(WARNINGS) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer $(CORE) src/intro.c native/pallet_import_stub.c build/poke_world.c tests/test_intro.c -o build/test-intro-sanitize
 	./build/test-intro-sanitize
 
 engine:

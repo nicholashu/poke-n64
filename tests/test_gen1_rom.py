@@ -112,7 +112,10 @@ class RomIdentificationTests(unittest.TestCase):
         # Inject a synthetic profile into the test only. There is no production
         # option, environment variable or CLI switch for disabling the hashes.
         profile = replace(gen1_rom.PROFILES[0], sha1=hashlib.sha1(data).hexdigest())
-        with patch.object(gen1_rom, "PROFILES", (profile,)):
+        with patch.object(gen1_rom, "PROFILES", (profile,)), \
+             patch.object(gen1_rom, "extract_room", return_value={"synthetic": True}), \
+             patch("opening_rom.extract_opening_texts", return_value={"talks": {}, "ball": {},
+                                                                       "result": {}, "sources": {}}):
             scene = gen1_rom.extract_pallet(data)
         self.assertTrue(scene["source"]["verified_profile"])
         self.assertEqual(scene["source"]["sha256"], hashlib.sha256(data).hexdigest())
@@ -122,7 +125,10 @@ class RomIdentificationTests(unittest.TestCase):
         data[0x134:0x144] = b"POKEMON BLUE".ljust(16, b"\0")
         checksums(data)
         profile = replace(gen1_rom.PROFILES[1], sha1=hashlib.sha1(data).hexdigest())
-        with patch.object(gen1_rom, "PROFILES", (profile,)):
+        with patch.object(gen1_rom, "PROFILES", (profile,)), \
+             patch.object(gen1_rom, "extract_room", return_value={"synthetic": True}), \
+             patch("opening_rom.extract_opening_texts", return_value={"talks": {}, "ball": {},
+                                                                       "result": {}, "sources": {}}):
             scene = gen1_rom.extract_pallet(bytes(data))
         self.assertEqual(scene["source"]["game"], "blue")
         self.assertTrue(scene["source"]["symbols_reference"].endswith("/pokeblue.sym"))

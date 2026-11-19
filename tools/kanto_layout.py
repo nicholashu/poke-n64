@@ -107,7 +107,7 @@ def core_source(rooms=None):
             lines.append(f'    {{ {i}, {x}, {z}, {ORDER.index(dest)}, {spawn} }},')
     lines += ['};',
               'const unsigned gPokeIntroWarpCount = sizeof(gPokeIntroWarps)/sizeof(gPokeIntroWarps[0]);', '']
-    return '\\n'.join(lines)
+    return '\n'.join(lines)
 
 
 def native_header():

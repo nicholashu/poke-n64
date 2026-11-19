@@ -255,7 +255,8 @@ def install(engine: Path, boot_mode: str = "poke", *,
         for name in ORDER[1:]:
             room=ROOMS[name]; segment=room["segment"]
             sh,sb,rh,rb,_=build_pallet_segments(
-                name, imported["world"]["rooms"][name] if imported is not None else None)
+                name, (imported.get("world", {}).get("rooms") or {}).get(name)
+                if imported is not None else None)
             stem="poke_"+segment
             for suffix,data in (("_scene_header",sh),("_scene",sb),("_room_header",rh),("_room",rb)):
                 outputs["src/code/"+stem+suffix+".c"]=data.encode()
@@ -266,7 +267,7 @@ def install(engine: Path, boot_mode: str = "poke", *,
                       'include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'_header.o"\n'
                       '    include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'.o"')
         outputs["src/code/poke_world.c"]=opening_core_source(
-            imported["world"]["rooms"] if imported is not None else None).encode()
+            imported.get("world", {}).get("rooms") if imported is not None else None).encode()
         outputs["src/code/poke_red_mesh.c"]=character_source().encode()
         outputs["include/poke_world_native.h"]=native_header().encode()
         patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',

@@ -420,7 +420,7 @@ def compile_world(world: dict) -> dict:
         "assembly_translation":False,"post_lab_events":False,"sram_persistence":False,
         "music":False,"interior_collision":bool(world.get("rooms")),
         "interior_procedural_art":bool(world.get("rooms")),
-        "interior_object_runtime":False,"yellow":False},
+        "interior_object_runtime":False,"interiors":False,"yellow":False},
         "verification":"Generated data only. Requires native build and emulator verification."})
     return {"scene_header":sh,"scene":sb,"room_header":rh,"room":rb,
             "data_source":native_data_source(world,info),"metadata":info,"world":world}
