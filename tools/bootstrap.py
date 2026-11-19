@@ -11,6 +11,8 @@ import hashlib
 import json
 from pathlib import Path
 from pallet_town import build_segments as build_pallet_segments, unused_room_source
+from kanto_layout import ORDER, ROOMS, core_source as opening_core_source, native_header
+from character_models import source as character_source
 import subprocess
 import sys
 
@@ -102,7 +104,7 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               "    SaveContext_Init();\n"
               "    Sram_InitNewSave();\n"
               "    gSaveContext.fileNum = 0xFF; /* RAM-only engineering save */\n"
-              "    gSaveContext.save.entranceIndex = ENTR_KOKIRI_FOREST_0;\n"
+              "    gSaveContext.save.entranceIndex = ENTR_KNOW_IT_ALL_BROS_HOUSE_0;\n"
               "    gSaveContext.save.linkAge = LINK_AGE_CHILD;\n"
               "    gSaveContext.save.cutsceneIndex = CS_INDEX_NONE;\n"
               "    gSaveContext.save.dayTime = CLOCK_TIME(10, 0);\n"
@@ -134,25 +136,24 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         patch("src/code/z_play.c", "    this->gameplayFrames = 0;\n}",
               "    this->gameplayFrames = 0;\n"
               "    PokeOot_OnSceneEnter(this);\n}")
+        patch("src/code/z_play.c", "    Play_InitScene(this, spawn);",
+              "    Play_InitScene(this, PokeOot_ResolveSpawn(sceneId, spawn));")
+        patch("src/code/z_play.c", "        Interface_Draw(this);",
+              "        if (!PokeOot_IsScene(this->sceneId)) Interface_Draw(this);")
         patch("src/code/z_play.c",
               "        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);",
-              "        /* Keep the native OoT camera/actor update alive in battle.\n"
-              "         * Suppress gameplay input only; Pokémon consumes the saved\n"
-              "         * controller data after Play_Update returns.\n"
-              "         */\n"
-              "        if (PokeOot_BattleActive()) {\n"
-              "            Input savedInput = this->state.input[0];\n"
-              "            this->state.input[0].cur.button = 0;\n"
-              "            this->state.input[0].press.button = 0;\n"
-              "            this->state.input[0].cur.stick_x = 0;\n"
-              "            this->state.input[0].cur.stick_y = 0;\n"
-              "            Play_Update(this);\n"
-              "            this->state.input[0] = savedInput;\n"
-              "        } else {\n"
-              "            Play_Update(this);\n"
-              "        }\n"
+              "        Input pokeSavedInput = this->state.input[0];\n"
+              "        PokeOot_PrepareInput(this);\n"
+              "        Play_Update(this);\n"
+              "        this->state.input[0] = pokeSavedInput;\n"
               "        PokeOot_Update(this);\n"
               "    }\n\n    PLAY_LOG(4583);")
+        patch("src/code/z_player_lib.c", '#include "player.h"',
+              '#include "player.h"\n#include "poke_red.h"')
+        for next_function in ("Player_OverrideLimbDrawGameplayFirstPerson", "Player_OverrideLimbDrawGameplayCrawling"):
+            anchor="    return false;\n}\n\ns32 "+next_function
+            patch("src/code/z_player_lib.c",anchor,
+                  "    PokeRed_HideLinkLimb(play, dList);\n"+anchor)
         patch("src/code/z_play.c",
               "    Play_Draw(this);\n\n    PLAY_LOG(4587);",
               "    Play_Draw(this);\n"
@@ -163,7 +164,11 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_oot.o"\n'
-              '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"')
+              '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_intro.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_world.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_red_actor.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_red_mesh.o"')
         # Retain Kokiri's original scene ID and entrance for this first
         # integration, but load an entirely original Pallet Town scene/room
         # payload in place of Kokiri's ROM segments. Native OoT player,
@@ -207,6 +212,22 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         outputs["src/code/poke_pallet_scene.c"] = pallet_scene.encode()
         outputs["src/code/poke_pallet_room_header.c"] = pallet_room_head.encode()
         outputs["src/code/poke_pallet_room.c"] = pallet_room.encode()
+        # Four existing single-room interior slots, retaining DMA/scene IDs.
+        for name in ORDER[1:]:
+            room=ROOMS[name]; segment=room["segment"]
+            sh,sb,rh,rb,_=build_pallet_segments(name)
+            stem="poke_"+segment
+            for suffix,data in (("_scene_header",sh),("_scene",sb),("_room_header",rh),("_room",rb)):
+                outputs["src/code/"+stem+suffix+".c"]=data.encode()
+            for kind in ("scene","room"):
+                old=segment+"_scene" if kind=="scene" else segment+"_room_0"
+                patch("spec/scenes_n64.inc",
+                      'include "$(BUILD_DIR)/assets/scenes/indoors/'+segment+'/'+old+'.o"',
+                      'include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'_header.o"\n'
+                      '    include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'.o"')
+        outputs["src/code/poke_world.c"]=opening_core_source().encode()
+        outputs["src/code/poke_red_mesh.c"]=character_source().encode()
+        outputs["include/poke_world_native.h"]=native_header().encode()
         patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
               'ROM_NAME("POKEMON RED OOT")')
         patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PO")')
@@ -250,6 +271,10 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
             "native/oot_conversion.c": "src/code/poke_oot.c",
             "native/oot_conversion.h": "include/poke_oot.h",
             "native/stadium_asset.h": "include/stadium_asset.h",
+            "native/red_actor.h": "include/poke_red.h",
+            "native/red_actor.c": "src/code/poke_red_actor.c",
+            "include/poke_intro.h": "include/poke_intro.h",
+            "src/intro.c": "src/code/poke_intro.c",
             "include/poke.h": "include/poke.h",
             "src/core.c": "src/code/poke_core.c",
             "src/save.c": "src/code/poke_save.c",

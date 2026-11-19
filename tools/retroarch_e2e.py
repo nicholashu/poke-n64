@@ -348,6 +348,10 @@ class Runner:
         self.steps: list[dict] = []
         self.status = "pending"
 
+    def config_overlay(self, command_port: int, pad_port: int) -> str:
+        return network_overlay(self.session / "saves", self.session / "states",
+                               self.session / "screenshots", command_port, pad_port)
+
     def start(self) -> None:
         if sys.platform != "darwin":
             raise RuntimeError("Live RetroArch E2E tests require macOS (offline tests run anywhere)")
@@ -362,10 +366,7 @@ class Runner:
         for sub in ("saves", "states", "screenshots"):
             (self.session / sub).mkdir()
         overlay = self.session / "test-config.cfg"
-        overlay.write_text(network_overlay(
-            self.session / "saves", self.session / "states",
-            self.session / "screenshots", command_port, pad_port,
-        ), encoding="utf-8")
+        overlay.write_text(self.config_overlay(command_port, pad_port), encoding="utf-8")
         self.remote = Remote(command_port, pad_port)
         argv = [
             str(binary), "-v", "--log-file=" + str(self.session / "retroarch.log"),

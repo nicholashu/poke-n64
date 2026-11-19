@@ -1,6 +1,6 @@
 {
   "name": "Battle probe: select Bulbasaur, face wild Rattata, use Tackle",
-  "description": "Exploratory native battle route using independent C-button controls in ParaLLEl Launcher Edition. Verifies battle UI transitions and a turn-animation change without claiming HP delta until OCR can read the counters.",
+  "description": "LEGACY: targets the pre-opening Pallet build with instant starter/debug shortcuts. Current ROMs use tools/opening_e2e.py; this fixture is retained only to reproduce old evidence. Exploratory native battle route using independent C-button controls in ParaLLEl Launcher Edition. Verifies battle UI transitions and a turn-animation change without claiming HP delta until OCR can read the counters.",
   "steps": [
     {
       "action": "wait",

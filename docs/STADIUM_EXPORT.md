@@ -25,19 +25,18 @@ assets/private/stadium/001/
 
 The skinned GLB has joint weights, inverse-bind matrices, and Stadium **idle** and **attack_default** animation curves where those contexts exist. Animation track frequencies are 30 FPS. Blender should show an armature and animation clips when importing the GLB.
 
-The N64 path is deliberately a separate optimized representation rather than shipping the GLB inside the ROM. It samples at most 12 key poses per animation, bakes weighted mesh geometry offline, batches triangles for the 32-vertex RSP limit, and downsamples textures to RGBA5551 within 4 KiB TMEM. Its source file is generated under ignored `assets/private/` and copied into the OoT checkout at build time. Without it, the native build uses a copyright-free stub.
+The N64 path is deliberately a separate optimized representation rather than shipping the GLB inside the ROM. It samples at most 12 key poses per animation, bakes weighted mesh geometry offline, batches triangles for the 32-vertex RSP limit, and downsamples textures to RGBA5551 within 4 KiB TMEM. Its source file is generated under ignored `assets/private/` and copied into the OoT checkout at build time. Without it, the native build links the asset-availability stub and draws the project's original Bulbasaur fallback mesh.
 
-### In-game controls (temporary Kokiri Forest test)
+### In-game use in the current opening
 
-First choose **Bulbasaur** using L+C-left. The test controls are:
+Choose Bulbasaur from its physical ball in Oak's lab during the normal opening. The privately generated Stadium mesh is selected automatically for Bulbasaur during the rival fight, or the original fallback is used when it is absent.
 
-- **L+R+A:** play a Stadium Bulbasaur attack animation next to Link
-- **L+R+B:** start a level-4 wild Rattata turn-based battle with a native OoT sub-camera
-- **D-pad up/down, A, B:** navigate Pokémon's Fight/Bag/Party/Run and moves; the Pokémon rules resolve HP, PP and turns
+- **D-pad up/down, A, B:** navigate Fight/Bag/Party/Run and move choices.
+- **L+R+B:** starts the optional wild Rattata debug encounter only after the first rival battle is complete.
 
-The enemy currently has an **original cuboid placeholder**, not a Stadium Rattata model. Kokiri Forest is also a test arena, not a finished battle background. The camera uses OoT's sub-camera system, then returns to its native follow camera when the battle ends.
+Red and the other species currently use original generated meshes. Battles use a native subcamera and return to the normal field/interior camera afterward. Instant L+C-left starter selection and the old Link-side attack preview belonged to the earlier Kokiri test build; they do not bypass the current story.
 
-The normal `make rom-docker` prototype is unchanged. The new asset and battle are enabled only in the experimental OoT total conversion.
+The standalone `make rom-docker` prototype remains separate. Use `make rom-oot-docker` for the opening and `make test-opening` for its controller playthrough. See [Pallet implementation](PALLET_TOWN.md).
 
 ### Verification boundary
 

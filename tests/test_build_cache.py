@@ -13,6 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import build_rom
+from kanto_layout import ORDER, ROOMS
 
 
 class BuildCacheTests(unittest.TestCase):
@@ -42,6 +43,12 @@ class BuildCacheTests(unittest.TestCase):
             "                0x03000100  gPalletWorldDl",
             "",
         ])
+        for name in ORDER[1:]:
+            segment=ROOMS[name]["segment"]
+            for suffix,header,address in (("_scene","SceneHeader","02000000"),
+                                          ("_room_0","RoomHeader","03000000")):
+                record += f"0x{address} _{segment}{suffix}SegmentStart = .\n"
+                record += f"0x{address} g{name}{header}\n"
         file = self.engine / "synthetic.map"
         file.write_text(record)
         self.assertEqual(
@@ -63,6 +70,13 @@ class BuildCacheTests(unittest.TestCase):
         file.write_text(broken_room)
         with self.assertRaisesRegex(RuntimeError, "spot04_room_0 header.*offset 0"):
             build_rom.verify_pallet_segment_headers(file)
+
+        for name in ORDER[1:]:
+            for header,address in (("SceneHeader","02000000"),("RoomHeader","03000000")):
+                file.write_text(record.replace(f"0x{address} g{name}{header}",
+                                               f"0x{int(address,16)+16:08X} g{name}{header}"))
+                with self.assertRaisesRegex(RuntimeError, "header.*offset 0"):
+                    build_rom.verify_pallet_segment_headers(file)
 
     def test_missing_link_map_or_symbol_is_not_silently_accepted(self):
         file = self.engine / "missing.map"

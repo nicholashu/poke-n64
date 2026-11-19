@@ -168,6 +168,7 @@ int poke_valid_game(const PokeGame *g) {
     unsigned i;
     int alive=0;
     if (!g->rng || g->mode>MODE_MENU || g->party_count>POKE_PARTY_MAX || g->balls>99 || g->potions>99 ||
+        g->trainer_battle>1 || g->battle_result>BATTLE_RAN ||
         g->flags>FLAG_STARTER || g->seen_mask>31 || g->caught_mask>31 ||
         (g->caught_mask & ~g->seen_mask) || g->walk_distance>=POKE_TILE ||
         g->encounter_cooldown>8*POKE_TILE || !poke_walkable(g->x,g->z)) return 0;
@@ -209,9 +210,18 @@ PokeResult poke_start_encounter(PokeGame *g,uint8_t species,uint8_t level) {
     if (!poke_species(species) || level<2 || level>100) return POKE_INVALID;
     poke_make_mon(&g->enemy,species,level);
     g->mode=MODE_BATTLE; g->cursor=0; g->turns=0; g->forced_switch=0;
+    g->trainer_battle=0; g->battle_result=BATTLE_NONE;
     g->walk_distance=0; reset_stages(g);
     g->seen_mask|=species_mask(species);
     note_join(g,"A wild ",poke_species(species)->name," appeared!");
+    return POKE_OK;
+}
+
+PokeResult poke_start_trainer_battle(PokeGame *g,uint8_t species,uint8_t level) {
+    PokeResult result=poke_start_encounter(g,species,level);
+    if (result!=POKE_OK) return result;
+    g->trainer_battle=1;
+    note_join(g,"BLUE sent out ",poke_species(species)->name,"!");
     return POKE_OK;
 }
 
@@ -232,12 +242,28 @@ void poke_heal(PokeGame *g) {
 
 static void finish_battle(PokeGame *g) {
     g->mode=MODE_FIELD; g->cursor=0; g->forced_switch=0;
+    g->trainer_battle=0;
     g->walk_distance=0; g->encounter_cooldown=3*POKE_TILE;
     memset(&g->enemy,0,sizeof(g->enemy)); reset_stages(g);
 }
 
 static void blackout(PokeGame *g) {
+    uint8_t trainer=g->trainer_battle;
+    unsigned i,j;
+    g->battle_result=BATTLE_LOST;
     finish_battle(g);
+    if (trainer) {
+        /* The opening rival fight continues after a loss. Do not teleport
+         * into the legacy host map or invent a reward/item refill. */
+        for (i=0;i<g->party_count;++i) {
+            g->party[i].hp=g->party[i].max_hp;
+            for (j=0;j<POKE_MOVE_SLOTS;++j)
+                g->party[i].pp[j]=poke_move_info(g->party[i].moves[j])->pp;
+        }
+        g->active=0;
+        poke_note(g,"BLUE won the battle.");
+        return;
+    }
     g->x=12*POKE_TILE+POKE_TILE/2; g->z=19*POKE_TILE+POKE_TILE/2;
     g->active=0; poke_heal(g);
     poke_note(g,"Your party fainted. Back at the healing station.");
@@ -255,6 +281,7 @@ static void award_xp(PokeGame *g) {
     uint16_t old_hp;
     uint8_t old_level=m->level;
     if (!m->hp || m->level==100) return;
+    if (g->trainer_battle) gain=gain*3u/2u;
     m->xp=(m->xp+gain>1000000u) ? 1000000u : m->xp+gain;
     while (m->level<100 && m->xp>=poke_level_xp((uint8_t)(m->level+1))) {
         old_hp=m->max_hp; ++m->level;
@@ -272,6 +299,7 @@ static void award_xp(PokeGame *g) {
 static int resolve_faints(PokeGame *g) {
     unsigned next;
     if (!g->enemy.hp) {
+        g->battle_result=BATTLE_WON;
         note_join(g,poke_species(g->enemy.species)->name," fainted!","");
         award_xp(g); if (g->wins!=UINT32_MAX) ++g->wins;
         next=first_alive(g);
@@ -400,6 +428,7 @@ PokeResult poke_capture(PokeGame *g) {
     uint32_t chance;
     uint8_t mask;
     if (!accepts_battle_action(g)) return POKE_WRONG_MODE;
+    if (g->trainer_battle) return POKE_INVALID;
     if (g->party_count==POKE_PARTY_MAX) return POKE_PARTY_FULL;
     if (!g->balls) return POKE_NO_ITEM;
     --g->balls; if (g->turns<UINT16_MAX) ++g->turns;
@@ -412,6 +441,7 @@ PokeResult poke_capture(PokeGame *g) {
         g->party[g->party_count++]=g->enemy;
         mask=species_mask(g->enemy.species); g->caught_mask|=mask; g->seen_mask|=mask;
         if (g->captures!=UINT32_MAX) ++g->captures;
+        g->battle_result=BATTLE_CAUGHT;
         note_join(g,"Caught ",poke_species(g->enemy.species)->name,"!");
         finish_battle(g);
     } else { poke_note(g,"It broke free!"); enemy_turn(g); }
@@ -420,8 +450,10 @@ PokeResult poke_capture(PokeGame *g) {
 
 PokeResult poke_run(PokeGame *g) {
     if (!accepts_battle_action(g)) return POKE_WRONG_MODE;
+    if (g->trainer_battle) return POKE_INVALID;
     if (g->turns<UINT16_MAX) ++g->turns;
     if (g->party[g->active].speed>=g->enemy.speed || g->turns>=3 || poke_random(g)%4u!=0) {
+        g->battle_result=BATTLE_RAN;
         poke_note(g,"Got away safely."); finish_battle(g);
     } else { poke_note(g,"Could not escape!"); enemy_turn(g); }
     return POKE_OK;

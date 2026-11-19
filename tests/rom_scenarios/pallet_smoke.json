@@ -1,10 +1,19 @@
 {
-  "name": "Pallet Town: boots, movement, no N64 exception",
-  "description": "Wait for opening title overlay to settle, measure idle animation, then drive Link forward and require the visual movement to exceed idle drift; also check for N64 exception screens.",
+  "name": "Bedroom: wake, walk, no N64 exception",
+  "description": "Short diagnostic only. Wake Red in the bedroom, then compare idle and actual walking frames. Use tools/opening_e2e.py for state-verified complete opening.",
   "steps": [
     {
       "action": "wait",
       "seconds": 10
+    },
+    {
+      "action": "key_hold",
+      "keycode": 49,
+      "seconds": 0.2
+    },
+    {
+      "action": "wait",
+      "seconds": 2
     },
     {
       "action": "assert_status"
@@ -33,7 +42,7 @@
     {
       "action": "key_hold",
       "keycode": 13,
-      "seconds": 2.5
+      "seconds": 1.0
     },
     {
       "action": "wait",

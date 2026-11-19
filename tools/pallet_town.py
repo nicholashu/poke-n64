@@ -5,14 +5,15 @@ The experimental total conversion uses the SCENE_KOKIRI_FOREST scene slot as a
 temporary staging slot, replacing *its ROM scene/room payloads* with original
 Pallet Town geometry. No Kokiri mesh, rooms, NPCs or scene collision are loaded.
 
-All vertices, collision walls, and building facades are authored here in a
-deterministic, ROM-free recipe. Link, OoT's player, camera and collision stay.
+All 3D vertices are authored here. Exact semantic map coordinates and
+passability come from the pinned original map reference in kanto_layout.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 from itertools import chain
+from kanto_layout import CELL, ORDER, ROOMS, bounds as map_bounds, point, walkable
 
 Vec = tuple[int, int, int]
 Color = tuple[int, int, int]
@@ -45,19 +46,17 @@ class Landmark:
     wall: Color
 
 
-LANDMARKS = (
-    Landmark("Red's house", -405, 150, 174, 158, 210, RED, CREAM),
-    Landmark("Rival's house", 405, 150, 174, 158, 210, ROOF_BLUE, CREAM),
-    Landmark("Professor Oak's laboratory", 0, -650, 320, 195, 230, LAB_ROOF, WHITE),
-)
-TREES = (
-    (-880, -1110), (-875, -860), (-865, -600), (-872, -280), (-880, 200),
-    (-850, 530), (-835, 860), (880, -1040), (870, -820), (865, -520),
-    (865, -180), (865, 270), (860, 650), (830, 900),
-    (-650, -980), (660, -990), (-670, 530), (650, 540),
-)
-SPAWN = (0, 0, 690)
-WORLD_BOUNDS = (-1100, -1300, 1100, 1150)
+def _landmark(b):
+    x,z=point("PalletTown", b["x"]+(b["width"]-1)/2, b["y"]+(b["height"]-1)/2)
+    names={"reds_house":"Red's house","blues_house":"Rival's house","oaks_lab":"Professor Oak's laboratory"}
+    return Landmark(names[b["name"]],x,z,b["width"]*CELL//2,b["height"]*CELL//2,
+                    138 if b["name"]=="oaks_lab" else 116,RED,CREAM)
+
+LANDMARKS=tuple(_landmark(b) for b in ROOMS["PalletTown"]["buildings"])
+TREES=()  # Original perimeter uses rounded obstacles, not invented tall trees.
+SPAWN=(*point("PalletTown",5,6),)
+SPAWN=(SPAWN[0],0,SPAWN[1])
+WORLD_BOUNDS=map_bounds("PalletTown")
 
 
 def _normal(a: Vec, b: Vec, c: Vec) -> tuple[float, float, float]:
@@ -114,62 +113,192 @@ class Geometry:
         self.box(x,z,51,51,85,LEAVES_LIGHT,y0=181)
         self.box(x,z,35,35,52,LEAVES,y0=248)
 
-    def building(self, b: Landmark):
-        x,z,hx,hz,h = b.x,b.z,b.half_w,b.half_d,b.height
-        self.box(x,z,hx,hz,h,b.wall,collide=True)
-        peak = h + (92 if b.name.startswith("Professor") else 78)
-        x1,x2 = x-hx-19,x+hx+19
-        z1,z2 = z-hz-19,z+hz+19
-        self.quad((x1,h,z1),(x1,h,z2),(x,peak,z2),(x,peak,z1),b.roof)
-        self.quad((x,peak,z1),(x,peak,z2),(x2,h,z2),(x2,h,z1),b.roof)
-        self.tri((x1,h,z2),(x2,h,z2),(x,peak,z2), b.wall)
-        self.tri((x2,h,z1),(x1,h,z1),(x,peak,z1), b.wall)
-        # Front facing south (+Z): entrances and blue-glass windows.
-        door_width = 65 if hx < 200 else 91
-        self.quad((x-door_width//2,0,z+hz+4),(x+door_width//2,0,z+hz+4),
-                  (x+door_width//2,146,z+hz+4),(x-door_width//2,146,z+hz+4),TRUNK)
-        for delta in (-int(hx*0.60), int(hx*0.60)):
-            self.quad((x+delta-35,94,z+hz+5),(x+delta+35,94,z+hz+5),
-                      (x+delta+35,157,z+hz+5),(x+delta-35,157,z+hz+5),WINDOW)
-        # Door remains a non-enterable prototype. House collision includes its facade.
-        if b.name.startswith("Professor"):
-            self.box(x,z+hz+25,112,13,13,(241,239,224),y0=164)
-            self.box(x,z+hz+39,80,5,11,LAB_ROOF,y0=166)
+    def prism(self, x, z, rx, rz, y, height, color, sides=8):
+        ring=[(round(x+rx*math.cos(i*2*math.pi/sides)),y,
+               round(z+rz*math.sin(i*2*math.pi/sides))) for i in range(sides)]
+        for i,a in enumerate(ring):
+            b=ring[(i+1)%sides]
+            shade=tuple(round(c*(0.80+0.20*(i%3)/2)) for c in color)
+            self.quad(a,b,(b[0],y+height,b[2]),(a[0],y+height,a[2]),shade)
+            self.tri((x,y+height,z),(a[0],y+height,a[2]),(b[0],y+height,b[2]),color)
 
-    def make(self):
-        x1,z1,x2,z2 = WORLD_BOUNDS
-        self.flat(x1,z1,x2,z2,-2,GRASS)
-        # A continuous path north to Route 1, crossroads to both houses,
-        # and a short walkway into the laboratory.
-        self.flat(-116,-1260,116,1030,0,ROAD)
-        self.flat(-690,315,690,423,0,ROAD)
-        self.flat(-615,309,-270,225,0,ROAD)
-        self.flat(270,309,615,225,0,ROAD)
-        self.flat(-140,-455,140,-402,0,ROAD_EDGE)
-        self.flat(-163,-850,163,-848,0,ROAD_EDGE)
-        self.flat(-1080,925,1080,1150,0,SEA)
-        # Grass strips near Route 1 and homes, visibly different in 3D.
-        for i in range(9):
-            z = -1240 + 116*i
-            self.flat(-405,z,-250,z+80,0,GRASS_DARK)
-            self.flat(250,z,405,z+80,0,GRASS_DARK)
-        for b in LANDMARKS: self.building(b)
-        for x,z in TREES: self.tree(x,z)
-        # Decorative route markers and small fences.
-        for x,z in ((-160,-1050),(170,-1050),(-240,625),(248,625)):
-            self.box(x,z,39,8,96,WHITE)
-            self.box(x,z,43,10,10,RED,y0=96)
-        for fence_x1,fence_x2,z in ((-695,-250,465),(250,695,465),(-665,-225,-315),(225,665,-315)):
-            for x in range(fence_x1,fence_x2,94):
-                self.box(x,z,8,8,85,WHITE)
-            self.box((fence_x1+fence_x2)//2,z,abs(fence_x2-fence_x1)//2,7,13,WHITE,y0=49)
+    def building(self, b: Landmark, data):
+        x1,x2=b.x-b.half_w,b.x+b.half_w
+        z1,z2=b.z-b.half_d,b.z+b.half_d
+        h=b.height
+        door_x,_=point("PalletTown",*data["door"])
+        dx1,dx2=door_x-CELL//2,door_x+CELL//2
+        # No wall across the passable door cell. Its alcove reaches the warp.
+        for left,right in ((x1,dx1),(dx2,x2)):
+            self.quad((left,0,z2),(right,0,z2),(right,h,z2),(left,h,z2),b.wall)
+        self.quad((x1,0,z1),(x1,h,z1),(x2,h,z1),(x2,0,z1),b.wall)
+        self.quad((x1,0,z1),(x1,0,z2),(x1,h,z2),(x1,h,z1),WHITE)
+        self.quad((x2,0,z2),(x2,0,z1),(x2,h,z1),(x2,h,z2),CREAM)
+        self.quad((dx1,0,z2-CELL+1),(dx2,0,z2-CELL+1),
+                  (dx2,84,z2-CELL+1),(dx1,84,z2-CELL+1),TRUNK)
+        self.quad((dx1,84,z2),(dx2,84,z2),(dx2,h,z2),(dx1,h,z2),b.wall)
+        # Dark door opening remains readable at the outdoor follow-camera angle.
+        # It is visual only; entering this passable cell starts the native warp.
+        self.quad((dx1+7,0,z2+1),(dx2-7,0,z2+1),
+                  (dx2-7,80,z2+1),(dx1+7,80,z2+1),(48,60,49))
+        peak=h+52
+        self.quad((x1,h,z1),(x1,peak,b.z),(x2,peak,b.z),(x2,h,z1),b.roof)
+        self.quad((x1,peak,b.z),(x1,h,z2),(x2,h,z2),(x2,peak,b.z),tuple(int(c*.82) for c in b.roof))
+        self.tri((x1,h,z1),(x1,h,z2),(x1,peak,b.z),CREAM)
+        self.tri((x2,h,z2),(x2,h,z1),(x2,peak,b.z),CREAM)
+        # Original window rhythm and horizontal facade trim, authored in 3D.
+        for cx in range(data["x"],data["x"]+data["width"]):
+            wx,_=point("PalletTown",cx,data["y"])
+            if cx==data["door"][0]: continue
+            self.quad((wx-24,42,z2+1),(wx+24,42,z2+1),(wx+24,80,z2+1),(wx-24,80,z2+1),WINDOW)
+            self.box(wx,z2+2,2,1,38,WHITE,y0=42)
+        self.box(b.x,z2+2,b.half_w,2,7,WHITE,y0=89)
+        for offset in (-36,0,36):
+            # Roof strips do not extend the original footprint.
+            z=b.z+offset
+            y=peak-round(abs(offset)*52/b.half_d)+1
+            self.flat(x1,z,x2,z+2,y,tuple(min(255,c+18) for c in b.roof))
 
-        # Reliable flat walkable ground and blocking collision for the edges.
-        self.collision_quad((x1,0,z1),(x1,0,z2),(x2,0,z2),(x2,0,z1))
-        self.collision_quad((x1,0,z2),(x1,360,z2),(x2,360,z2),(x2,0,z2))
-        self.collision_quad((x2,0,z1),(x2,360,z1),(x1,360,z1),(x1,0,z1))
-        self.collision_quad((x1,0,z1),(x1,360,z1),(x1,360,z2),(x1,0,z2))
-        self.collision_quad((x2,0,z2),(x2,360,z2),(x2,360,z1),(x2,0,z1))
+    def outdoors(self):
+        room=ROOMS["PalletTown"]
+        x1,z1,x2,z2=self.bounds
+        self.flat(x1,z1,x2,z2,-2,(145,180,113))
+        # Preserve original 8px ground-pattern positions, with original 3D detail.
+        for rz,row in enumerate(room["ground_rows"]):
+            for rx,kind in enumerate(row):
+                if kind not in "gdf": continue
+                x=x1+rx*CELL//2; z=z1+rz*CELL//2
+                if kind in "df": self.flat(x,z,x+CELL//2,z+CELL//2,-1,GRASS)
+                for ox,oz in ((8,12),(21,24)) if kind=="g" else ((7,8),(23,24)):
+                    self.tri((x+ox,0,z+oz),(x+ox+3,6,z+oz),(x+ox+7,0,z+oz+2),GRASS_DARK)
+        for b,data in zip(LANDMARKS,room["buildings"]): self.building(b,data)
+        for z,row in enumerate(room["semantic_rows"]):
+            for x,kind in enumerate(row):
+                wx,wz=point("PalletTown",x,z)
+                if kind=="B":
+                    self.prism(wx,wz,35,35,0,53,(105,130,106))
+                    self.prism(wx,wz,29,29,53,18,(161,182,145))
+                elif kind=="F":
+                    for delta in (-23,23): self.box(wx+delta,wz,6,8,42,WHITE)
+                    self.box(wx,wz,38,5,8,TRUNK,y0=24)
+                elif kind=="S":
+                    self.box(wx,wz,6,6,38,TRUNK)
+                    self.box(wx,wz,31,5,29,WHITE,y0=28)
+                    for y in (35,43,51): self.box(wx,wz+6,23,1,2,TRUNK,y0=y)
+                elif kind=="~":
+                    self.flat(wx-40,wz-40,wx+40,wz+40,-1,SEA)
+                    for offset in (-21,12): self.flat(wx-26,wz+offset,wx+26,wz+offset+3,0,(160,207,216))
+                elif kind=="T":
+                    self.flat(wx-40,wz-40,wx+40,wz+40,-1,GRASS_DARK)
+                    for dx in (-24,0,24):
+                        for dz in (-23,4,25):
+                            self.tri((wx+dx-9,0,wz+dz),(wx+dx,24,wz+dz),(wx+dx+8,0,wz+dz+2),LEAVES)
+        for f in room["flowers"]:
+            # Reference values identify centers in cell-edge coordinates.
+            x,z=point("PalletTown",f["x"]-.5,f["y"]-.5)
+            self.box(x,z,2,2,14,LEAVES)
+            for dx,dz in ((-7,0),(7,0),(0,-7),(0,7)):
+                self.flat(x+dx-5,z+dz-5,x+dx+5,z+dz+5,14,(238,222,174))
+            self.flat(x-4,z-4,x+4,z+4,15,(220,161,65))
+
+    def interiors(self):
+        room=ROOMS[self.room_name]
+        x1,z1,x2,z2=self.bounds
+        lab=self.room_name=="OaksLab"
+        self.flat(x1,z1,x2,z2,-1,(204,197,163) if lab else (191,150,104))
+        # Cutaway walls keep all original floor cells visible from the native camera.
+        self.box(0,z1+8,(x2-x1)//2,8,136,(218,223,203))
+        self.box(x1+4,0,4,(z2-z1)//2,36,CREAM)
+        self.box(x2-4,0,4,(z2-z1)//2,36,CREAM)
+        for z in range(room["dimensions"][1]):
+            for x in range(room["dimensions"][0]):
+                wx,wz=point(self.room_name,x,z)
+                if lab:
+                    if (x+z)%2==0: self.flat(wx-39,wz-39,wx+39,wz+39,0,(186,193,167))
+                else:
+                    self.flat(wx-39,wz+36,wx+39,wz+38,0,(166,124,83))
+        for feature in room.get("features",[]):
+            kind=feature["kind"]
+            if "bounds" in feature: x,z,w,d=feature["bounds"]
+            else: x,z=feature["at"]; w=d=1
+            wx,wz=point(self.room_name,x+(w-1)/2,z+(d-1)/2)
+            hw,hd=w*CELL//2-5,d*CELL//2-5
+            if kind=="window":
+                self.quad((wx-25,55,z1+18),(wx+25,55,z1+18),(wx+25,108,z1+18),(wx-25,108,z1+18),WINDOW)
+                self.box(wx,z1+19,2,1,53,WHITE,y0=55)
+            elif kind in ("poster","wall_map"):
+                self.quad((wx-27,56,z1+18),(wx+27,56,z1+18),(wx+27,111,z1+18),(wx-27,111,z1+18),WHITE)
+                self.quad((wx-17,65,z1+19),(wx+17,65,z1+19),(wx+17,100,z1+19),(wx-17,100,z1+19),GRASS)
+            elif kind=="bed":
+                self.box(wx,wz,hw,hd,18,TRUNK)
+                self.box(wx,wz,hw-2,hd-3,10,RED,y0=18)
+                self.box(wx,wz-hd+18,hw-5,14,7,WHITE,y0=28)
+            elif kind=="plant":
+                self.prism(wx,wz+12,20,20,0,26,(155,99,68),6)
+                self.prism(wx,wz+12,29,29,26,37,LEAVES,6)
+            elif kind=="bookshelves":
+                self.box(wx,wz,hw,hd,90,TRUNK)
+                for shelf in (19,44,69):
+                    self.box(wx,wz+hd+1,hw-5,2,3,CREAM,y0=shelf)
+                    for bx in range(wx-hw+8,wx+hw-7,12):
+                        self.box(bx,wz+hd+3,4,2,16,(91+(bx%3)*32,114,147),y0=shelf+3)
+            elif kind=="chair":
+                # Visual chair only: original chairs are passable.
+                self.box(wx,wz,17,17,4,TRUNK,y0=20)
+                self.box(wx,wz-17,17,3,24,TRUNK,y0=20)
+            elif kind in ("pc","computer_workbench","tv"):
+                self.box(wx,wz,hw,hd,30,TRUNK)
+                self.box(wx,wz,hw-9,min(hd,18),35,(62,69,67),y0=30)
+                self.quad((wx-hw+14,37,wz+19),(wx+hw-14,37,wz+19),(wx+hw-14,58,wz+19),(wx-hw+14,58,wz+19),WINDOW)
+            elif kind=="console":
+                self.box(wx,wz,25,18,12,(184,188,186))
+                self.box(wx,wz+5,18,8,3,(71,66,82),y0=12)
+            else:
+                self.box(wx,wz,hw,hd,7,(206,174,122),y0=40)
+                for dx in (-hw+7,hw-7):
+                    for dz in (-hd+7,hd-7): self.box(wx+dx,wz+dz,5,5,40,TRUNK)
+                if kind=="pokedex_table":
+                    for dx in (-CELL//2,CELL//2): self.box(wx+dx,wz,15,20,4,RED,y0=47)
+        if self.room_name=="BluesHouse":
+            # The map is visible on Daisy's table; receiving it is a later quest.
+            wx,wz=point(self.room_name,3,3)
+            self.flat(wx-22,wz-26,wx+22,wz+26,48,WHITE)
+            self.flat(wx-15,wz-19,wx+15,wz+19,49,GRASS)
+            self.flat(wx-3,wz-19,wx+3,wz+19,50,ROAD)
+        for warp in room["warps"]:
+            wx,wz=point(self.room_name,*warp["at"])
+            if warp.get("kind","").startswith("stairs"):
+                for i in range(5): self.box(wx,wz-28+i*13,34,5,3+i*4,(225,217,184))
+            else: self.flat(wx-39,wz-39,wx+39,wz+39,1,(175,72,64))
+
+    def map_collision(self):
+        room=ROOMS[self.room_name]
+        width,height=room["dimensions"]
+        x0,z0,_,_=self.bounds
+        # Independent floor quads and edge walls preserve every passability cell.
+        # No collision on chair/flower cells; water has no walkable floor.
+        self.blocking_edges=[]
+        for z in range(height):
+            for x in range(width):
+                if not walkable(self.room_name,x,z): continue
+                x1,z1=x0+x*CELL,z0+z*CELL; x2,z2=x1+CELL,z1+CELL
+                self.collision_quad((x1,0,z1),(x1,0,z2),(x2,0,z2),(x2,0,z1))
+                for dx,dz,a,b in ((-1,0,(x1,0,z2),(x1,0,z1)),
+                                   (1,0,(x2,0,z1),(x2,0,z2)),
+                                   (0,-1,(x1,0,z1),(x2,0,z1)),
+                                   (0,1,(x2,0,z2),(x1,0,z2))):
+                    if walkable(self.room_name,x+dx,z+dz): continue
+                    self.blocking_edges.append((x,z,dx,dz))
+                    # Wind toward the walkable cell. Walls prevent jumping
+                    # across Game Boy obstacles that have no passable top.
+                    self.collision_quad(a,b,(b[0],240,b[2]),(a[0],240,a[2]))
+
+    def make(self, room_name="PalletTown"):
+        self.room_name=room_name
+        self.bounds=map_bounds(room_name)
+        if room_name=="PalletTown": self.outdoors()
+        else: self.interiors()
+        self.map_collision()
         return self
 
 
@@ -197,6 +326,8 @@ def _collision_data(geom: Geometry):
 
 def scene_source(geom: Geometry) -> str:
     vertices, polys = _collision_data(geom)
+    room=ROOMS[geom.room_name]
+    x1,z1,x2,z2=geom.bounds
     lines = [
         '/* Original Pallet Town scene, replacing the Kokiri staging scene slot. */',
         '#include "ultra64.h"',
@@ -221,22 +352,23 @@ def scene_source(geom: Geometry) -> str:
         'SceneCmd gPalletSceneHeader[] = {',
         '    SCENE_CMD_COL_HEADER(&gPalletCollision),',
         '    SCENE_CMD_ROOM_LIST(1, gPalletRoomList),',
-        '    SCENE_CMD_SOUND_SETTINGS(0, 0, NA_BGM_FIELD_LOGIC),',
+        '    SCENE_CMD_SOUND_SETTINGS(0, 0, NA_BGM_DISABLED),',
         '    SCENE_CMD_MISC_SETTINGS(0, 0),',
         '    SCENE_CMD_SPECIAL_FILES(0, OBJECT_GAMEPLAY_FIELD_KEEP),',
         '    SCENE_CMD_SKYBOX_SETTINGS(1, 0, LIGHT_MODE_TIME),',
         '    SCENE_CMD_ENV_LIGHT_SETTINGS(4, gPalletLights),',
         '    SCENE_CMD_SPAWN_LIST(gPalletEntrances),',
-        '    SCENE_CMD_PLAYER_ENTRY_LIST(1, gPalletPlayerSpawns),',
+        f'    SCENE_CMD_PLAYER_ENTRY_LIST({len(room["spawns"])}, gPalletPlayerSpawns),',
         '    SCENE_CMD_END(),',
         '};', '',
         'RomFile gPalletRoomList[] = {',
         '    { (uintptr_t)_spot04_room_0SegmentRomStart,',
         '      (uintptr_t)_spot04_room_0SegmentRomEnd },',
         '};',
-        f'ActorEntry gPalletPlayerSpawns[] = {{ {{ ACTOR_PLAYER, {{ {SPAWN[0]}, 0, {SPAWN[2]} }},',
-        '    { 0, DEG_TO_BINANG(180.0f), 0 }, 0x0FFF } };',
-        'Spawn gPalletEntrances[] = { { 0, 0 } };',
+        'ActorEntry gPalletPlayerSpawns[] = {',
+        *[f'    {{ ACTOR_PLAYER, {{ {point(geom.room_name,x,z)[0]}, 0, {point(geom.room_name,x,z)[1]} }}, {{ 0, DEG_TO_BINANG({yaw}.0f), 0 }}, PLAYER_PARAMS(PLAYER_START_MODE_IDLE, PLAYER_START_BG_CAM_DEFAULT) }},' for x,z,yaw in room["spawns"]],
+        '};',
+        'Spawn gPalletEntrances[] = { '+', '.join('{ '+str(i)+', 0 }' for i in range(len(room["spawns"])))+' };',
         '/* Compatibility only: these Zelda cutscenes are still referenced by', 
         ' * compiled but unreachable Zelda code and actor overlays. Never', 
         ' * trigger them in Pallet Town. Minimal valid scripts preserve the', 
@@ -278,13 +410,22 @@ def scene_source(geom: Geometry) -> str:
     lines += [
         '};',
         'CollisionHeader gPalletCollision = {',
-        '    { -1100, -30, -1300 }, { 1100, 365, 1150 },',
+        f'    {{ {x1}, -30, {z1} }}, {{ {x2}, 365, {z2} }},',
         '    ARRAY_COUNT(gPalletColVertices), gPalletColVertices,',
         '    ARRAY_COUNT(gPalletColPolys), gPalletColPolys,',
         '    gPalletSurfaceTypes, gPalletCameras, 0, NULL',
         '};', '',
     ]
-    return '\n'.join(lines)
+    source='\n'.join(lines)
+    if geom.room_name!="PalletTown":
+        # Retain compatibility symbols only in the exterior segment.
+        start=source.index('/* Compatibility only')
+        end=source.index('EnvLightSettings gPalletLights[4] =',start)
+        source=source[:start]+source[end:]
+        source=source.replace('SCENE_CMD_SKYBOX_SETTINGS(1, 0, LIGHT_MODE_TIME)',
+                              'SCENE_CMD_SKYBOX_SETTINGS(0, 0, LIGHT_MODE_SETTINGS)')
+        source=source.replace('NA_BGM_FIELD_LOGIC','NA_BGM_DISABLED')
+    return source
 
 
 def room_source(geom: Geometry) -> str:
@@ -407,28 +548,31 @@ def split_segment_header(source: str, name: str) -> tuple[str, str]:
     return header, body
 
 
-def build_segments():
-    """Return header-first OoT objects and original Pallet metadata.
-
-    Link `scene_header` before `scene_body`, and `room_header` before
-    `room_body`, in the corresponding spot04 ROM segments. Never combine
-    the pairs in a single C object, because GCC can reorder their data.
-    """
-    scene, room, metadata = build()
-    scene_header, scene_body = split_segment_header(scene, "gPalletSceneHeader")
-    room_header, room_body = split_segment_header(room, "gPalletRoomHeader")
-    return scene_header, scene_body, room_header, room_body, metadata
+def build_segments(room_name="PalletTown"):
+    scene,room,metadata=build(room_name)
+    prefix="gPallet" if room_name=="PalletTown" else "g"+room_name
+    scene_header,scene_body=split_segment_header(scene,prefix+"SceneHeader")
+    room_header,room_body=split_segment_header(room,prefix+"RoomHeader")
+    return scene_header,scene_body,room_header,room_body,metadata
 
 
-def build():
-    g = Geometry().make()
-    scene,room = scene_source(g),room_source(g)
+def build(room_name="PalletTown"):
+    geom=Geometry().make(room_name)
+    scene,room=scene_source(geom),room_source(geom)
+    if room_name!="PalletTown":
+        prefix="g"+room_name
+        segment=ROOMS[room_name]["segment"]
+        scene=scene.replace('gPallet',prefix).replace('_spot04_room_0','_'+segment+'_room_0')
+        room=room.replace('gPallet',prefix)
     return scene,room,{
-        "landmarks":[l.name for l in LANDMARKS],
-        "spawn":SPAWN,
-        "triangles":len(g.faces),
-        "collisionPolygons":len(g.coll_faces),
-        "staticRoomBuffers":math.ceil(len(g.faces)/10),
+        "landmarks":[l.name for l in LANDMARKS] if room_name=="PalletTown" else [],
+        "spawn":(*point(room_name,*ROOMS[room_name]["spawns"][0][:2]),),
+        "dimensions":ROOMS[room_name]["dimensions"],
+        "triangles":len(geom.faces),
+        "collisionPolygons":len(geom.coll_faces),
+        "staticRoomBuffers":math.ceil(len(geom.faces)/10),
+        "walkableCells":sum(row.count('.') for row in ROOMS[room_name]["static_walkable_rows"]),
+        "reference": "pret/pokered ba9c0568f64ae602fadda577a08c66639f93082a",
     }
 
 

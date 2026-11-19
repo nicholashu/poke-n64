@@ -175,10 +175,13 @@ def verify_pallet_segment_headers(map_file: Path) -> None:
     if not map_file.is_file():
         raise RuntimeError(f"Native ROM link map missing: {map_file}")
     data = map_file.read_text()
-    for segment, header in (
-        ("spot04_scene", "gPalletSceneHeader"),
-        ("spot04_room_0", "gPalletRoomHeader"),
-    ):
+    from kanto_layout import ORDER, ROOMS
+    pairs=[("spot04_scene","gPalletSceneHeader"),("spot04_room_0","gPalletRoomHeader")]
+    for name in ORDER[1:]:
+        segment=ROOMS[name]["segment"]
+        pairs.extend(((segment+"_scene","g"+name+"SceneHeader"),
+                      (segment+"_room_0","g"+name+"RoomHeader")))
+    for segment, header in pairs:
         start = linked_symbol_address(data, f"_{segment}SegmentStart")
         actual = linked_symbol_address(data, header)
         if actual != start:
