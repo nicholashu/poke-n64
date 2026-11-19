@@ -300,6 +300,9 @@ def export_skinned_glb(model: dict, target_height: float = 1.5,
                                  "interpolation": "LINEAR"})
                 channels.append({"sampler": len(samplers) - 1,
                                  "target": {"node": bone_index + 1, "path": label}})
+        if not channels:
+            # An untracked context has no transform data to animate.
+            continue
         gltf["animations"].append({
             "name": f"{context_name}_{clip['name']}",
             "samplers": samplers, "channels": channels,
