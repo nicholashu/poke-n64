@@ -146,6 +146,16 @@ class DockerBuildTests(unittest.TestCase):
             self.assertFalse(call.kwargs.get("shell", False))
             self.assertTrue(call.kwargs["check"])
 
+    def test_control_boot_runs_separately_with_verified_input(self) -> None:
+        self.environment.return_value = ("/usr/bin/docker", "linux/arm64")
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            docker_rom.run_in_docker(self.base, 2, control_boot=True)
+        build, launch = [call.args[0] for call in self.run.call_args_list]
+        self.assertIn("--control-boot", launch)
+        self.assertEqual("/project/build/docker-engine-arm64-control", launch[launch.index("--engine") + 1])
+        self.assertEqual("poke-n64-build-arm64", build[build.index("--tag") + 1])
+        self.assertIn("poke-n64-control.z64", output.getvalue())
+
     def test_native_check_needs_no_rom_and_uses_container_preflight(self) -> None:
         self.roms.rmdir()
         self.environment.return_value = ("/usr/bin/docker", "linux/arm64")
