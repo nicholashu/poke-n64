@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from pallet_town import build as build_pallet_scene
 import subprocess
 import sys
 
@@ -130,6 +131,19 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_oot.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"')
+        # Retain Kokiri's original scene ID and entrance for this first
+        # integration, but load an entirely original Pallet Town scene/room
+        # payload in place of Kokiri's ROM segments. Native OoT player,
+        # collision, camera and room systems stay intact.
+        patch("spec/spec",
+              'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"',
+              'include "$(BUILD_DIR)/src/code/poke_pallet_scene.o"')
+        patch("spec/spec",
+              'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"',
+              'include "$(BUILD_DIR)/src/code/poke_pallet_room.o"')
+        pallet_scene, pallet_room, _ = build_pallet_scene()
+        outputs["src/code/poke_pallet_scene.c"] = pallet_scene.encode()
+        outputs["src/code/poke_pallet_room.c"] = pallet_room.encode()
         patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
               'ROM_NAME("POKEMON RED OOT")')
         patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PO")')
