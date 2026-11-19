@@ -107,6 +107,32 @@ def core_source(rooms=None):
             lines.append(f'    {{ {i}, {x}, {z}, {ORDER.index(dest)}, {spawn} }},')
     lines += ['};',
               'const unsigned gPokeIntroWarpCount = sizeof(gPokeIntroWarps)/sizeof(gPokeIntroWarps[0]);', '']
+    if rooms is None:
+        lines += [
+            'const PokeIntroObject gPokeIntroObjects[1] = {{0}};',
+            'const unsigned gPokeIntroObjectCount = 0;',
+            'const PokeIntroSign gPokeIntroSigns[1] = {{0}};',
+            'const unsigned gPokeIntroSignCount = 0;',
+        ]
+    else:
+        objects = [(i,obj) for i,name in enumerate(ORDER)
+                   for obj in rooms[name]["objects"]]
+        signs = [(i,sign) for i,name in enumerate(ORDER)
+                 for sign in rooms[name]["signs"]]
+        lines += ['const PokeIntroObject gPokeIntroObjects[] = {']
+        for i,obj in objects:
+            lines.append('    { %d, %d, %d, %d, %d, %d, %d },' % (
+                i,obj["id"],obj["x"],obj["y"],obj["sprite_id"],
+                obj["text_id"],int(obj["visible_on_start"])))
+        lines += ['};',
+                  f'const unsigned gPokeIntroObjectCount = {len(objects)};',
+                  'const PokeIntroSign gPokeIntroSigns[] = {']
+        for i,sign in signs:
+            lines.append('    { %d, %d, %d, %d },' % (
+                i,sign["x"],sign["y"],sign["text_id"]))
+        if not signs:
+            lines.append('    {0,0,0,0},')
+        lines += ['};',f'const unsigned gPokeIntroSignCount = {len(signs)};']
     return '\n'.join(lines)
 
 

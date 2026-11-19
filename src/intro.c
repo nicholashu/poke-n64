@@ -5,7 +5,7 @@
  * decoded during import. Do not replace missing ROM passages with authored
  * substitute dialogue in the imported build. */
 static const char* opening_rom_dialogue(const PokeIntro* s) {
-    if (!gPokeOpeningTextEnabled || s->talk == TALK_NONE || s->talk > TALK_PC_FULL)
+    if (!gPokeOpeningTextEnabled || s->talk == TALK_NONE || s->talk > TALK_LAB_GIRL)
         return NULL;
     if (s->talk == TALK_BALL) {
         if (s->selection == POKE_BULBASAUR) return gPokeOpeningStarters[0];
@@ -143,7 +143,70 @@ static void confirm(PokeIntro* s,PokeGame* g,uint16_t pressed) {
     }
 }
 
+/* GB object and sign records, not the handwritten fixture, determine where
+ * every opening-area interaction occurs. Script effects below are adapters
+ * for pret/pokered's known map-specific assembly routines. */
+static void interact_rom(PokeIntro* s, PokeGame* g, int x, int z) {
+    unsigned i;
+    for (i = 0; i < gPokeIntroSignCount; ++i) {
+        const PokeIntroSign* sign = &gPokeIntroSigns[i];
+        if (sign->room != s->room || !near(s,x,z,sign->x,sign->z)) continue;
+        if (s->room == INTRO_PALLET) {
+            if (sign->text_id == 4) s->talk = TALK_LAB_SIGN;
+            else if (sign->text_id == 5) s->talk = TALK_TOWN_SIGN;
+            else if (sign->text_id == 6) s->talk = TALK_RED_SIGN;
+            else if (sign->text_id == 7) s->talk = TALK_BLUE_SIGN;
+        } else if (s->room == INTRO_HOME && sign->text_id == 2)
+            s->talk = TALK_TV;
+        return;
+    }
+    for (i = 0; i < gPokeIntroObjectCount; ++i) {
+        const PokeIntroObject* obj = &gPokeIntroObjects[i];
+        if (obj->room != s->room || !near(s,x,z,obj->x,obj->z)) continue;
+        switch (s->room) {
+            case INTRO_PALLET:
+                if (obj->id == 2) s->talk = TALK_GIRL;
+                else if (obj->id == 3) s->talk = TALK_FISHER;
+                break;
+            case INTRO_HOME:
+                if (obj->id == 1) {
+                    if (g->party_count) {
+                        heal_without_items(g);
+                        s->talk = TALK_HEALED;
+                    } else s->talk = TALK_MOM;
+                }
+                break;
+            case INTRO_BLUE_HOUSE:
+                if (obj->id == 1) s->talk = TALK_DAISY;
+                else if (obj->id == 2) s->talk = TALK_DAISY_WALK;
+                else if (obj->id == 3) s->talk = TALK_TOWN_MAP;
+                break;
+            case INTRO_LAB:
+                if (obj->id >= 2 && obj->id <= 4) {
+                    static const uint8_t starters[] = {
+                        POKE_CHARMANDER, POKE_SQUIRTLE, POKE_BULBASAUR
+                    };
+                    if (s->stage == INTRO_CHOOSE) {
+                        s->selection = starters[obj->id-2];
+                        s->talk = TALK_BALL;
+                    } else s->talk = s->stage < INTRO_CHOOSE ?
+                                      TALK_OAK_AWAY : TALK_OAK_DONE;
+                } else if (obj->id == 1) s->talk = TALK_BLUE;
+                else if (obj->id == 5) s->talk =
+                    s->stage == INTRO_CHOOSE ? TALK_PICK_FIRST : TALK_OAK_DONE;
+                else if (obj->id == 9) s->talk = TALK_LAB_GIRL;
+                else if (obj->id == 10 || obj->id == 11) s->talk = TALK_LAB_AIDE;
+                break;
+            default: break;
+        }
+        return;
+    }
+}
 static void interact(PokeIntro* s,PokeGame* g,int x,int z) {
+    if (gPokeOpeningTextEnabled) {
+        interact_rom(s,g,x,z);
+        return;
+    }
     if (s->room==INTRO_BEDROOM) {
         if (near(s,x,z,0,1)) {
             s->talk=s->pc_taken ? TALK_PC_EMPTY : g->potions>=99 ? TALK_PC_FULL : TALK_PC;
@@ -240,11 +303,13 @@ const char* poke_intro_speaker(const PokeIntro* s,const PokeGame* g) {
         case TALK_OAK_WARNING: case TALK_LAB_WELCOME: case TALK_PICK_FIRST: case TALK_OAK_DONE: return "PROFESSOR OAK";
         case TALK_CHOSEN: case TALK_RIVAL_CHALLENGE: case TALK_RESULT: case TALK_BLUE: return "BLUE";
         case TALK_MOM: case TALK_HEALED: return "MOM";
-        case TALK_DAISY: return "DAISY";
+        case TALK_DAISY: case TALK_DAISY_WALK: return "DAISY";
         case TALK_BALL: return poke_species(s->selection)->name;
         case TALK_GIRL: return "NEIGHBOR";
         case TALK_FISHER: return "TOWNSPERSON";
         case TALK_LAB_AIDE: return "OAK'S AIDE";
+        case TALK_LAB_GIRL: return "ASSISTANT";
+        case TALK_TOWN_MAP: return "TOWN MAP";
         default: return "PALLET TOWN";
     }
 }

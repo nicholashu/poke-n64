@@ -58,6 +58,9 @@ EVENT_TEXT = {
     "TALK_HEALED": ("mom_rest", "mom_healed"),
     "TALK_TV": ("tv",),
     "TALK_DAISY": ("daisy_before_dex",),
+    "TALK_DAISY_WALK": ("daisy_walking",),
+    "TALK_TOWN_MAP": ("town_map",),
+    "TALK_LAB_GIRL": ("girl_lab",),
     "TALK_OAK_AWAY": ("oak_dont_leave",),
     "TALK_PICK_FIRST": ("oak_which",),
     "TALK_LAB_AIDE": ("scientist",),
@@ -117,7 +120,7 @@ def emit_opening_c(opening: dict, encode) -> str:
         '/* Private dialogue decoded from a user-provided Red/Blue ROM. */',
         '#include "poke_intro.h"',
         'const unsigned gPokeOpeningTextEnabled = 1;',
-        'const char* const gPokeOpeningTalks[TALK_PC_FULL + 1] = {',
+        'const char* const gPokeOpeningTalks[TALK_LAB_GIRL + 1] = {',
     ]
     for talk, text in sorted(opening["talks"].items()):
         lines.append(f'    [{talk}] = {encode(text)},')

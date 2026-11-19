@@ -330,6 +330,19 @@ static void human(PlayState* play,s32 kind,f32 x,f32 y,f32 z,s16 yaw,f32 gait) {
 static void npc(PlayState* play,s32 kind,s32 x,s32 z,s16 yaw) {
     human(play,kind,cell_x(sPokeOot.intro.room,(f32)x),0,cell_z(sPokeOot.intro.room,(f32)z),yaw,0);
 }
+static void npc_slot(PlayState* play,s32 kind,s32 room,u8 id,s32 x,s32 z,s16 yaw) {
+    unsigned i;
+    if (gPokeOpeningTextEnabled) {
+        for (i=0;i<gPokeIntroObjectCount;++i) {
+            const PokeIntroObject* obj=&gPokeIntroObjects[i];
+            if (obj->room==room && obj->id==id) {
+                npc(play,kind,obj->x,obj->z,yaw);
+                return;
+            }
+        }
+    }
+    npc(play,kind,x,z,yaw);
+}
 static void ball(PlayState* play,s32 x) {
     GraphicsContext* gfx=play->state.gfxCtx;
     /* Small original two-tone geometric Poké Ball, independent of ROM assets. */
@@ -362,19 +375,19 @@ static void draw_world_people(PlayState* play,Player* p) {
         PokeModels_DrawHuman(play->state.gfxCtx,MODEL_RED,0,0);
         Matrix_Pop();
     } else human(play,MODEL_RED,p->actor.world.pos.x,p->actor.world.pos.y,p->actor.world.pos.z,p->actor.shape.rot.y,sPokeOot.gait);
-    if (s->room==INTRO_HOME) npc(play,MODEL_MOM,5,4,(s16)0xC000);
-    else if (s->room==INTRO_BLUE_HOUSE) npc(play,MODEL_DAISY,2,3,0x4000);
+    if (s->room==INTRO_HOME) npc_slot(play,MODEL_MOM,INTRO_HOME,1,5,4,(s16)0xC000);
+    else if (s->room==INTRO_BLUE_HOUSE) npc_slot(play,MODEL_DAISY,INTRO_BLUE_HOUSE,1,2,3,0x4000);
     else if (s->room==INTRO_PALLET) {
-        npc(play,MODEL_GIRL,3,8,0); npc(play,MODEL_FISHER,11,14,0);
+        npc_slot(play,MODEL_GIRL,INTRO_PALLET,2,3,8,0); npc_slot(play,MODEL_FISHER,INTRO_PALLET,3,11,14,0);
         if (s->stage==INTRO_OAK_WARNING) {
             human(play,MODEL_OAK,p->actor.world.pos.x,0,p->actor.world.pos.z+80,(s16)0x8000,0);
         } else if (s->stage==INTRO_ESCORT)
             human(play,MODEL_OAK,sPokeOot.oakPosition.x,0,sPokeOot.oakPosition.z,p->actor.shape.rot.y,1);
     } else if (s->room==INTRO_LAB) {
         s32 i; static const u8 choices[]={POKE_CHARMANDER,POKE_SQUIRTLE,POKE_BULBASAUR};
-        if (s->stage>=INTRO_LAB_WELCOME) npc(play,MODEL_OAK,5,2,0);
-        if (s->stage<INTRO_COMPLETE) npc(play,MODEL_BLUE,4,3,0);
-        npc(play,MODEL_GIRL,1,9,0); npc(play,MODEL_SCIENTIST,2,10,0); npc(play,MODEL_SCIENTIST,8,10,0);
+        if (s->stage>=INTRO_LAB_WELCOME) npc_slot(play,MODEL_OAK,INTRO_LAB,5,5,2,0);
+        if (s->stage<INTRO_COMPLETE) npc_slot(play,MODEL_BLUE,INTRO_LAB,1,4,3,0);
+        npc_slot(play,MODEL_GIRL,INTRO_LAB,9,1,9,0); npc_slot(play,MODEL_SCIENTIST,INTRO_LAB,10,2,10,0); npc_slot(play,MODEL_SCIENTIST,INTRO_LAB,11,8,10,0);
         for (i=0;i<3;++i) if (choices[i]!=s->starter && choices[i]!=s->rival) ball(play,6+i);
     }
 }
