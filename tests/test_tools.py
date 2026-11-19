@@ -78,7 +78,8 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("self->bootSplash = 1;", runtime)
         self.assertIn("if (self->bootSplash)", runtime)
         self.assertIn("if (!(state->input[0].cur.button & BTN_Z)) JournalLoad(self);", runtime)
-        self.assertEqual(runtime.count("self->drawBoxes = 0;"), 1)
+        self.assertEqual(runtime.count("self->drawBoxes = 0;"), 2)  # Frame and state initialization
+        self.assertNotIn("self->drawBoxes = 0;", runtime.split("static void DrawWorld", 1)[1].split("static void Panel", 1)[0])
         self.assertIn("if (v == NULL) return;", runtime)
 
     def test_refreshes_own_sources_but_keeps_unrelated_files(self) -> None:
