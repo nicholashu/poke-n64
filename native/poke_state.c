@@ -537,7 +537,11 @@ static void Draw(PokeState* self) {
         if (self->battleFrames < 30000) self->battleFrames++;
         StadiumCamera(self, &eye, &at);
     } else {
-        if (self->wasInBattle) self->cameraReady = 0;
+        if (self->wasInBattle) {
+            self->cameraReady = 0;
+            self->movementActive = 0;
+            self->cameraIdleFrames = 0;
+        }
         FieldCamera(self, &eye, &at);
     }
     self->wasInBattle = battle;
@@ -608,11 +612,21 @@ static void Poke_Main(GameState* state) {
         DrawBoot(self);
         return;
     }
-    if (self->game.mode == MODE_FIELD) keys = ReadFieldKeys(self, &state->input[0]);
+    if (self->game.mode == MODE_FIELD)
+        keys = ReadFieldKeys(self, &state->input[0]);
+    else
+        self->movementActive = 0; /* Menus and battles end a stick gesture. */
     poke_update(&self->game, keys);
     request = poke_take_request(&self->game);
     if (request == REQUEST_SAVE) poke_note(&self->game, JournalSave(self) ? "Adventure saved to cartridge SRAM." : "Save failed. Previous save preserved.");
-    if (request == REQUEST_LOAD && !JournalLoad(self)) poke_note(&self->game, "No valid save. Adventure unchanged.");
+    if (request == REQUEST_LOAD) {
+        if (JournalLoad(self)) {
+            self->cameraReady = 0; /* The saved position may be elsewhere. */
+            self->movementActive = 0;
+        } else {
+            poke_note(&self->game, "No valid save. Adventure unchanged.");
+        }
+    }
     /* Do not treat held confirm/start as a new edge after a successful load. */
     self->game.previous_keys = keys;
     Draw(self);
