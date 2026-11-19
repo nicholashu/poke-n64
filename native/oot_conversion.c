@@ -330,22 +330,22 @@ static const char* intro_line( const PokeIntro* intro, const PokeGame* game, uns
     }
     if (textId==POKE_PALLET_TEXT_NONE) return poke_intro_line(intro,game,line);
     source=gPokePalletMap.texts[textId];
-    if (source==NULL || source[0]=='\\0') return poke_intro_line(intro,game,line);
-    wrapped[0][0]=wrapped[1][0]='\\0';
+    if (source==NULL || source[0]=='\0') return poke_intro_line(intro,game,line);
+    wrapped[0][0]=wrapped[1][0]='\0';
     /* Stable, bounded output: support original line endings and wrap after
      * 36 characters without overrunning the N64 framebuffer text box. */
-    while (source[index]!='\\0' && index<POKE_PALLET_TEXT_LIMIT && row<2) {
+    while (source[index]!='\0' && index<POKE_PALLET_TEXT_LIMIT && row<2) {
         char ch=source[index++];
-        if (ch=='\\r') continue;
-        if (ch=='\\n' || column==36) {
-            wrapped[row][column]='\\0';
+        if (ch=='\r') continue;
+        if (ch=='\n' || column==36) {
+            wrapped[row][column]='\0';
             ++row;column=0;
             if (row>=2) break;
-            if (ch=='\\n') continue;
+            if (ch=='\n') continue;
         }
         wrapped[row][column++]=ch;
     }
-    if (row<2) wrapped[row][column]='\\0';
+    if (row<2) wrapped[row][column]='\0';
     return wrapped[line];
 }
 
