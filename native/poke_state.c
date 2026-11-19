@@ -363,72 +363,107 @@ static void PrintLine(GfxPrint* print, int x, int y, const char* text) {
     GfxPrint_Printf(print, "%s", line);
 }
 
+static void PrintShort(GfxPrint* print, int x, int y, const char* text, int cap) {
+    char line[37];
+    int i = 0;
+    if (cap < 1) return;
+    if (cap > 36) cap = 36;
+    while (i < cap && text[i]) {
+        line[i] = text[i];
+        i++;
+    }
+    line[i] = '\0';
+    GfxPrint_SetPosPx(print, x, y);
+    GfxPrint_Printf(print, "%s", line);
+}
+
 static void DrawHud(PokeState* self) {
     GraphicsContext* gfx = self->state.gfxCtx;
     PokeGame* game = &self->game;
     GfxPrint print;
     unsigned i, count = poke_menu_count(game);
-    int menuTop = 112;
-    Panel(gfx, 8, 7, 304, 31, 27, 43, 45);
-    Panel(gfx, 8, 185, 304, 47, 27, 43, 45);
-    if (game->mode != MODE_FIELD) Panel(gfx, 169, menuTop - 4, 143, 69, 35, 52, 53);
-    if (poke_in_battle(game)) {
-        const PokeMon* player = &game->party[game->active];
-        Panel(gfx, 15, 60, 104, 5, 67, 76, 69);
-        if (game->enemy.hp) Panel(gfx, 15, 60, 103 * game->enemy.hp / game->enemy.max_hp + 1, 5, 128, 211, 118);
-        Panel(gfx, 15, 180, 104, 3, 67, 76, 69);
-        if (player->hp) Panel(gfx, 15, 180, 103 * player->hp / player->max_hp + 1, 3, 128, 211, 118);
+    int battle = poke_in_battle(game);
+    unsigned firstOption = 0;
+
+    /* World exploration is no longer a full-screen Game Boy HUD. */
+    if (battle) {
+        /* Stadium-style opponent status, player status, command box, log. */
+        Panel(gfx, 8, 8, 149, 36, 26, 42, 49);
+        Panel(gfx, 163, 130, 149, 49, 26, 42, 49);
+        Panel(gfx, 8, 187, 154, 45, 26, 42, 49);
+        Panel(gfx, 166, 185, 146, 47, 34, 54, 57);
+        if (game->enemy.max_hp) {
+            Panel(gfx, 17, 33, 124, 5, 62, 64, 64);
+            if (game->enemy.hp) Panel(gfx, 17, 33, 124 * game->enemy.hp / game->enemy.max_hp,
+                                      5, 112, 203, 108);
+        }
+        if (game->party_count) {
+            const PokeMon* mon = &game->party[game->active];
+            Panel(gfx, 172, 163, 125, 5, 62, 64, 64);
+            if (mon->hp) Panel(gfx, 172, 163, 125 * mon->hp / mon->max_hp, 5, 112, 203, 108);
+        }
+    } else {
+        Panel(gfx, 8, 8, 190, 19, 26, 42, 49);
+        Panel(gfx, 8, 198, 304, 34, 26, 42, 49);
+        if (game->mode != MODE_FIELD) {
+            Panel(gfx, 167, 91, 145, 78, 34, 54, 57);
+        }
     }
+
     OPEN_DISPS(gfx);
     gSPSegment(OVERLAY_DISP++, 0, 0);
     GfxPrint_Init(&print);
     GfxPrint_Open(&print, OVERLAY_DISP);
-    GfxPrint_SetColor(&print, 242, 235, 210, 255);
-    PrintLine(&print, 15, 12, poke_in_battle(game) ? "POKE N64 / WILD ENCOUNTER" : "POKE N64 / PALLET + ROUTE 1");
-    PrintLine(&print, 15, 23, poke_objective(game));
-    if (poke_in_battle(game)) {
-        GfxPrint_SetPosPx(&print, 15, 48);
-        GfxPrint_Printf(&print, "%s L%u  HP %u/%u", poke_species(game->enemy.species)->name,
-                       game->enemy.level, game->enemy.hp, game->enemy.max_hp);
+    GfxPrint_SetColor(&print, 244, 239, 222, 255);
+    if (battle) {
+        const PokeMon* enemy = &game->enemy;
+        PrintShort(&print, 16, 13, poke_species(enemy->species)->name, 12);
+        GfxPrint_SetPosPx(&print, 110, 13);
+        GfxPrint_Printf(&print, "L%u", enemy->level);
         if (game->party_count) {
             const PokeMon* mon = &game->party[game->active];
-            GfxPrint_SetPosPx(&print, 15, 159);
-            GfxPrint_Printf(&print, "%s L%u", poke_species(mon->species)->name, mon->level);
-            GfxPrint_SetPosPx(&print, 15, 170);
+            PrintShort(&print, 173, 138, poke_species(mon->species)->name, 12);
+            GfxPrint_SetPosPx(&print, 270, 138);
+            GfxPrint_Printf(&print, "L%u", mon->level);
+            GfxPrint_SetPosPx(&print, 173, 151);
             GfxPrint_Printf(&print, "HP %u/%u", mon->hp, mon->max_hp);
         }
+        PrintShort(&print, 15, 193, game->log[POKE_LOG_LINES - 2], 17);
+        PrintShort(&print, 15, 205, game->log[POKE_LOG_LINES - 1], 17);
+        if (count > 4 && game->cursor >= 4) firstOption = game->cursor - 3;
+        for (i = firstOption; i < count && i < firstOption + 4; ++i) {
+            GfxPrint_SetColor(&print, game->cursor == i ? 255 : 218,
+                              game->cursor == i ? 212 : 224,
+                              game->cursor == i ? 91 : 214, 255);
+            GfxPrint_SetPosPx(&print, 174, 189 + (i - firstOption) * 10);
+            GfxPrint_Printf(&print, "%c %.14s",
+                            game->cursor == i ? '>' : ' ', poke_menu_label(game, i));
+        }
+        if (game->mode == MODE_MOVES && game->party_count && game->cursor < POKE_MOVE_SLOTS) {
+            const PokeMon* mon = &game->party[game->active];
+            const PokeMove* move = poke_move_info(mon->moves[game->cursor]);
+            GfxPrint_SetColor(&print, 244, 239, 222, 255);
+            GfxPrint_SetPosPx(&print, 174, 176);
+            GfxPrint_Printf(&print, "PP %u/%u", mon->pp[game->cursor], move->pp);
+        }
     } else {
-        GfxPrint_SetPosPx(&print, 15, 44);
-        GfxPrint_Printf(&print, "PARTY %u/6  BALL %u  POTION %u", game->party_count, game->balls, game->potions);
-        int tx = game->x / POKE_TILE;
-        int tz = game->z / POKE_TILE;
-        int dx, dz;
-        PrintLine(&print, 15, 56, "Stick: walk  A: talk  Start: menu");
-        for (dz = -1; dz <= 1; ++dz) for (dx = -1; dx <= 1; ++dx) {
-            PokeTile tile = poke_tile(tx + dx, tz + dz);
-            if (tile == TILE_OAK) PrintLine(&print, 15, 69, "OAK  /  Press A to talk");
-            if (tile == TILE_HEAL) PrintLine(&print, 15, 69, "HEALER  /  Press A to restore party");
+        PrintShort(&print, 15, 12, "PALLET TOWN / ROUTE 1", 26);
+        GfxPrint_SetColor(&print, 244, 239, 222, 255);
+        GfxPrint_SetPosPx(&print, 15, 204);
+        GfxPrint_Printf(&print, "PARTY %u/6   BALL %u   POTION %u",
+                        game->party_count, game->balls, game->potions);
+        PrintLine(&print, 15, 216, game->log[POKE_LOG_LINES - 1]);
+        if (game->mode != MODE_FIELD) {
+            for (i = 0; i < count && i < 6; ++i) {
+                GfxPrint_SetColor(&print, game->cursor == i ? 255 : 218,
+                                  game->cursor == i ? 212 : 224,
+                                  game->cursor == i ? 91 : 214, 255);
+                GfxPrint_SetPosPx(&print, 174, 97 + i * 11);
+                GfxPrint_Printf(&print, "%c %.15s",
+                                game->cursor == i ? '>' : ' ', poke_menu_label(game, i));
+            }
         }
     }
-    for (i = 0; i < count && i < 6; ++i) {
-        GfxPrint_SetColor(&print, game->cursor == i ? 255 : 217, game->cursor == i ? 212 : 225, game->cursor == i ? 92 : 209, 255);
-        GfxPrint_SetPosPx(&print, 176, menuTop + i * 10);
-        /* labels are names; 15 chars fits the right-side panel */
-        GfxPrint_Printf(&print, "%c %.15s", game->cursor == i ? '>' : ' ', poke_menu_label(game, i));
-    }
-    GfxPrint_SetColor(&print, 242, 235, 210, 255);
-    if (game->mode == MODE_MOVES && game->cursor < POKE_MOVE_SLOTS) {
-        const PokeMon* mon = &game->party[game->active];
-        const PokeMove* move = poke_move_info(mon->moves[game->cursor]);
-        GfxPrint_SetPosPx(&print, 15, 143);
-        GfxPrint_Printf(&print, "PP %u/%u", mon->pp[game->cursor], move->pp);
-    }
-    if (game->mode == MODE_PARTY && game->cursor < game->party_count) {
-        const PokeMon* mon = &game->party[game->cursor];
-        GfxPrint_SetPosPx(&print, 15, 93);
-        GfxPrint_Printf(&print, "L%u  HP %u/%u", mon->level, mon->hp, mon->max_hp);
-    }
-    for (i = 0; i < POKE_LOG_LINES; ++i) PrintLine(&print, 15, 190 + i * 9, game->log[i]);
     OVERLAY_DISP = GfxPrint_Close(&print);
     GfxPrint_Destroy(&print);
     CLOSE_DISPS(gfx);
@@ -441,12 +476,23 @@ static void Draw(PokeState* self) {
     self->drawBoxes = 0;
     Gfx_SetupFrame(gfx, true, 162, 196, 180);
     Gfx_ClearZBuffer(gfx);
-    at.x = battle ? 0 : self->game.x * WORLD_TILE / (f32)POKE_TILE;
-    at.y = battle ? 25 : 0;
-    at.z = battle ? 0 : self->game.z * WORLD_TILE / (f32)POKE_TILE - 100;
-    eye.x = at.x + (battle ? 320 : 0);
-    eye.y = battle ? 260 : 720;
-    eye.z = at.z + (battle ? 620 : 650);
+    if (battle) {
+        if (!self->wasInBattle) {
+            self->battleFrames = 0;
+            self->battleActionFrames = 0;
+            self->seenTurns = self->game.turns;
+        } else if (self->seenTurns != self->game.turns) {
+            self->battleActionFrames = 18;
+            self->seenTurns = self->game.turns;
+        }
+        if (self->battleActionFrames > 0) self->battleActionFrames--;
+        if (self->battleFrames < 30000) self->battleFrames++;
+        StadiumCamera(self, &eye, &at);
+    } else {
+        if (self->wasInBattle) self->cameraReady = 0;
+        FieldCamera(self, &eye, &at);
+    }
+    self->wasInBattle = battle;
     View_LookAt(&self->view, &eye, &at, &up);
     View_Apply(&self->view, VIEW_ALL);
     OPEN_DISPS(gfx);
@@ -461,11 +507,14 @@ static void Draw(PokeState* self) {
     gDPSetRenderMode(POLY_OPA_DISP++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);
     CLOSE_DISPS(gfx);
     if (battle) {
-        Box(self, 0, -8, 0, 440, 8, 310, 132, 165, 108);
-        Box(self, -140, 0, 100, 84, 3, 64, 199, 192, 143);
-        Box(self, 120, 0, -100, 84, 3, 64, 199, 192, 143);
-        if (self->game.party_count) Creature(self, -140, 100, self->game.party[self->game.active].species);
-        Creature(self, 120, -100, self->game.enemy.species);
+        int playerBob = (int)(2.0f * Math_SinF((f32)self->battleFrames * 0.12f));
+        int enemyBob = (int)(3.0f * Math_SinF((f32)self->battleFrames * 0.09f + 1.8f));
+        Box(self, 0, -8, 0, 440, 8, 310, 114, 145, 103);
+        Box(self, -140, 0, 100, 91, 3, 74, 192, 182, 143);
+        Box(self, 120, 0, -100, 91, 3, 74, 192, 182, 143);
+        if (self->game.party_count)
+            Creature(self, -140, 100, self->game.party[self->game.active].species, playerBob);
+        Creature(self, 120, -100, self->game.enemy.species, enemyBob);
     } else DrawWorld(self);
     DrawHud(self);
 }
@@ -494,6 +543,13 @@ static void Poke_Main(GameState* state) {
             self->saveGeneration = 0;
             self->saveSlot = -1;
             self->drawBoxes = 0;
+            self->cameraYaw = 0.0f;
+            self->playerYaw = 0.0f;
+            self->cameraReady = 0;
+            self->cameraIdleFrames = 0;
+            self->wasInBattle = 0;
+            self->battleFrames = 0;
+            self->battleActionFrames = 0;
             if (!(state->input[0].cur.button & BTN_Z)) JournalLoad(self);
             self->bootSplash = 0;
             self->game.previous_keys = KEY_A;
@@ -501,6 +557,7 @@ static void Poke_Main(GameState* state) {
         DrawBoot(self);
         return;
     }
+    if (self->game.mode == MODE_FIELD) keys = ReadFieldKeys(self, &state->input[0]);
     poke_update(&self->game, keys);
     request = poke_take_request(&self->game);
     if (request == REQUEST_SAVE) poke_note(&self->game, JournalSave(self) ? "Adventure saved to cartridge SRAM." : "Save failed. Previous save preserved.");
