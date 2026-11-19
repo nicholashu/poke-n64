@@ -8,8 +8,12 @@ HEADERS = include/poke.h
 HOST = build/poke-n64
 # Export paths verbatim rather than interpolating filenames into a shell command.
 export POKE_N64_ROM := $(ROM)
+# These variables are exported verbatim, so paths with spaces remain intact.
+STADIUM_SPECIES ?= 1
+export STADIUM_SPECIES
+export STADIUM_ROM
 
-.PHONY: all play test sanitize check-native check-native-docker check-rom engine rom rom-docker rom-control-docker clean help
+.PHONY: all play test sanitize check-native check-native-docker check-rom engine rom rom-docker rom-control-docker stadium-export stadium-inspect clean help
 all: $(HOST)
 
 build:
@@ -60,6 +64,13 @@ rom-docker:
 rom-control-docker:
 	$(PYTHON) tools/docker_rom.py --control-boot
 
+# Uses the local Stadium ROM. Extracted Nintendo assets stay in ignored assets/private/.
+stadium-inspect:
+	$(PYTHON) tools/stadium_export.py --inspect-only
+
+stadium-export:
+	$(PYTHON) tools/stadium_export.py
+
 clean:
 	rm -f build/poke-n64 build/test-core build/test-save build/test-core-sanitize build/test-save-sanitize
 
@@ -74,3 +85,7 @@ help:
 	@echo 'make rom ROM=/path/oot.z64  Build native ROM using your OoT NTSC 1.2 dump'
 	@echo 'make rom-docker            Build in Docker; recommended on macOS'
 	@echo 'make rom-control-docker    Build stock-boot diagnostic ROM'
+	@echo 'make stadium-inspect        Fingerprint your local Stadium ROM (no downloads)'
+	@echo 'make stadium-export         Export a Stadium model as private textured GLB'
+	@echo 'make stadium-export STADIUM_SPECIES=19  Export Rattata'
+	@echo 'STADIUM_ROM=/path/... make stadium-export   Select ROM with spaces safely'
