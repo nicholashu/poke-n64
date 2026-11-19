@@ -1,0 +1,17 @@
+.git
+build
+baseroms
+vendor
+assets/private
+assets/extracted
+**/__pycache__
+*.z64
+*.Z64
+*.v64
+*.V64
+*.n64
+*.N64
+*.rom
+*.ROM
+*.sav
+*.sra

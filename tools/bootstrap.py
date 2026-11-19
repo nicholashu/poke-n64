@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Install the project overlay into an isolated, pinned HackerOoT checkout.
+
+No ROM is required. Existing unknown edits are rejected, never reset or cleaned.
+The manifest permits refreshing files installed by a previous invocation.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCK = json.loads((ROOT / "native/upstream.json").read_text())
+DEFAULT_ENGINE = ROOT / "build/engine"
+MANIFEST = ".poke-overlay.json"
+
+
+def run(*args: str, cwd: Path | None = None, capture: bool = False) -> str:
+    result = subprocess.run(args, cwd=cwd, check=True, text=True,
+                            stdout=subprocess.PIPE if capture else None)
+    return result.stdout.strip() if capture else ""
+
+
+def sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def replace_once(text: str, old: str, new: str, file: str) -> str:
+    if text.count(old) != 1:
+        raise RuntimeError(f"Pinned source anchor mismatch in {file}: {old!r}")
+    return text.replace(old, new, 1)
+
+
+def ensure_checkout(engine: Path) -> None:
+    if not engine.exists():
+        engine.parent.mkdir(parents=True, exist_ok=True)
+        run("git", "init", str(engine))
+        run("git", "remote", "add", "origin", LOCK["repository"], cwd=engine)
+        run("git", "fetch", "--depth", "1", "origin", LOCK["commit"], cwd=engine)
+        run("git", "checkout", "--detach", "FETCH_HEAD", cwd=engine)
+    if not (engine / ".git").is_dir():
+        raise RuntimeError(f"{engine} is not an isolated git checkout")
+    actual = run("git", "rev-parse", "HEAD", cwd=engine, capture=True)
+    if actual != LOCK["commit"]:
+        raise RuntimeError(f"Expected HackerOoT {LOCK['commit']}, found {actual}. Use a new --engine directory.")
+
+
+def install(engine: Path) -> None:
+    ensure_checkout(engine)
+    old_manifest_path = engine / MANIFEST
+    old_manifest = json.loads(old_manifest_path.read_text()) if old_manifest_path.exists() else {}
+    original: dict[str, bytes] = {}
+    outputs: dict[str, bytes] = {}
+
+    def original_text(path: str) -> str:
+        data = subprocess.run(["git", "show", f"{LOCK['commit']}:{path}"], cwd=engine,
+                              check=True, stdout=subprocess.PIPE).stdout
+        original[path] = data
+        return data.decode()
+
+    def patch(path: str, anchor: str, replacement: str) -> None:
+        text = outputs[path].decode() if path in outputs else original_text(path)
+        outputs[path] = replace_once(text, anchor, replacement, path).encode()
+
+    for path in ("src/code/graph.c", "src/code/z_game_dlftbls.c", "src/code/title_setup.c"):
+        patch(path, '#include "setup_state.h"', '#include "setup_state.h"\n#include "poke_state.h"')
+    patch("src/code/title_setup.c",
+          "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
+          "SET_NEXT_GAMESTATE(&this->state, Poke_Init, PokeState);")
+    path = "include/tables/gamestate_table.h"
+    outputs[path] = (original_text(path).rstrip() +
+                     "\n/* poke-n64: resident custom RPG state */\n"
+                     "DEFINE_GAMESTATE_INTERNAL(Poke, GAMESTATE_POKE)\n").encode()
+    patch("spec/spec", '    include "$(BUILD_DIR)/src/code/title_setup.o"',
+          '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
+          '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
+          '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
+          '    include "$(BUILD_DIR)/src/code/poke_state.o"')
+    patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")', 'ROM_NAME("POKE N64 MVP")')
+    patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PK")')
+    # The upstream stdint header only supplies pointer-sized types. Extend it with
+    # standard C fixed widths rather than changing the shared portable sources.
+    patch("include/libc/stdint.h", "#define STDINT_H", "#define STDINT_H\n\n"
+          "typedef signed char int8_t;\ntypedef unsigned char uint8_t;\n"
+          "typedef signed short int16_t;\ntypedef unsigned short uint16_t;\n"
+          "typedef signed int int32_t;\ntypedef unsigned int uint32_t;\n"
+          "typedef signed long long int64_t;\ntypedef unsigned long long uint64_t;\n"
+          "#define UINT32_C(value) value ## U\n#define INT32_C(value) value\n")
+    patch("include/config/config_memory.h", "#define POLY_OPA_BUFFER_SIZE 0x1A00",
+          "#define POLY_OPA_BUFFER_SIZE 0x3000")
+    patch("include/config/config_memory.h", "#define OVERLAY_BUFFER_SIZE 0x400",
+          "#define OVERLAY_BUFFER_SIZE 0x2000")
+    # Fixed hardware target and low-noise runtime. No asset-dependent map selects.
+    outputs[".make_options.mk"] = b"VERSION=ntsc-1.2\nREGION=US\nDEBUG_FEATURES=0\nCOMPILER=gcc\n"
+    copies = {
+        "native/poke_state.c": "src/code/poke_state.c",
+        "native/poke_state.h": "include/poke_state.h",
+        "include/poke.h": "include/poke.h",
+        "src/core.c": "src/code/poke_core.c",
+        "src/save.c": "src/code/poke_save.c",
+    }
+    for source, target in copies.items():
+        outputs[target] = (ROOT / source).read_bytes()
+    # Validate every write first: fail without partly applying an overlay.
+    for path, desired in outputs.items():
+        dest = engine / path
+        if dest.exists():
+            current = dest.read_bytes()
+            known = current == desired or current == original.get(path) or sha(current) == old_manifest.get(path)
+            if not known:
+                raise RuntimeError(f"Refusing to overwrite unexpected changes in {dest}")
+    for path, desired in outputs.items():
+        dest = engine / path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(desired)
+    old_manifest_path.write_text(json.dumps({path: sha(data) for path, data in outputs.items()}, indent=2) + "\n")
+    print(f"Installed poke-n64 overlay at {engine} (HackerOoT {LOCK['commit'][:12]}).")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
+    args = parser.parse_args()
+    try:
+        install(args.engine.resolve())
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+        sys.exit(f"Bootstrap failed: {exc}")
+
+
+if __name__ == "__main__":
+    main()

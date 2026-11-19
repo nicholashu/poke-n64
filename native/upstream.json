@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/HackerN64/HackerOoT.git",
+  "commit": "5fac42fa11278810ce9ca5b85d5d40b4136b5f57",
+  "version": "ntsc-1.2",
+  "region": "US",
+  "base_rom_md5": "57a9719ad547c516342e1a15d5c28c3d",
+  "base_rom_size": 33554432,
+  "graphics": "F3DEX3",
+  "ram_mb": 8
+}

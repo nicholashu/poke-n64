@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "runtime_provider": "native-original-proxies",
+  "description": "Original geometry in native/poke_state.c. Slots are reserved for later converted models; this manifest is documentation, not a Stadium extractor.",
+  "species": [
+    {"id": 1, "name": "Bulbasaur", "model": "proxy", "required_animations": ["idle", "attack", "hit", "faint"]},
+    {"id": 4, "name": "Charmander", "model": "proxy", "required_animations": ["idle", "attack", "hit", "faint"]},
+    {"id": 7, "name": "Squirtle", "model": "proxy", "required_animations": ["idle", "attack", "hit", "faint"]},
+    {"id": 16, "name": "Pidgey", "model": "proxy", "required_animations": ["idle", "attack", "hit", "faint"]},
+    {"id": 19, "name": "Rattata", "model": "proxy", "required_animations": ["idle", "attack", "hit", "faint"]}
+  ]
+}

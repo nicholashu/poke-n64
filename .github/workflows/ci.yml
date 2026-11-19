@@ -1,0 +1,35 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gameplay:
+    name: Shared gameplay (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and exercise the complete slice
+        run: make test
+      - name: Check memory and undefined behavior
+        run: make sanitize
+
+  n64:
+    name: Native MIPS compilation (no ROM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mips-linux-gnu binutils-mips-linux-gnu
+      - name: Compile real native objects and boot hooks
+        run: python3 tools/check_native.py --require-mips
+      - name: Check overlay and ROM input safeguards
+        run: python3 tests/test_tools.py
