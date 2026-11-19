@@ -76,7 +76,9 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
     executable, platform = docker_environment()
     architecture = platform.split("/")[1]
     image = f"{IMAGE}-{architecture}"
-    engine = f"/project/build/docker-engine-{architecture}" + ("-control" if control_boot else "")
+    # The original '-control' checkout was already patched by earlier builds.
+    # Use a fresh '-stock' directory for a true unmodified upstream baseline.
+    engine = f"/project/build/docker-engine-{architecture}" + ("-stock" if control_boot else "")
     jobs = max(1, jobs)
     print(f"Using native Docker platform: {platform}", flush=True)
     # Only the build recipe is sent to the Docker image builder. Source code,
