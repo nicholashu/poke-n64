@@ -160,6 +160,11 @@ def network_overlay(save: Path, state: Path, shots: Path,
         "network_remote_base_port": str(pad_port),
         "screenshot_directory": str(shots),
         "screenshot_raw": "true",
+        # Screenshot notifications persist for multiple frames and can make
+        # an idle screenshot differ from the next screenshot, falsely
+        # resembling gameplay movement.
+        "notification_show_screenshot": "false",
+        "notification_show_screenshot_flash": "0",
         # Terminal-driven automation must keep the emulation clock running
         # even when another macOS app owns keyboard focus.
         "pause_nonactive": "false",
