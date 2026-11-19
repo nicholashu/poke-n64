@@ -10,6 +10,8 @@ WORKDIR /project
 RUN git config --global --add safe.directory /project/build/engine
 RUN git config --global --add safe.directory /project/build/docker-engine-amd64
 RUN git config --global --add safe.directory /project/build/docker-engine-arm64
+RUN git config --global --add safe.directory /project/build/docker-engine-arm64-control
+RUN git config --global --add safe.directory /project/build/docker-engine-amd64-control
 # Bind-mount the repo and supply a locally dumped base ROM at runtime.
 # No copyrighted input or generated ROM is copied into the image.
 CMD ["make", "test"]
