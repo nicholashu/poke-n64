@@ -369,14 +369,34 @@ def compile_world(world: dict) -> dict:
     """Compiler entry for the validated extraction IR, including synthetic tests."""
     data=validate_world(world)
     geom,info=make_geometry(data)
-    scene=scene_source(geom,bounds=tuple(info["bounds"]),spawn=tuple(info["spawn"]))
+    # The Red/Blue map has three house/lab doors. Retain all corresponding
+    # OoT spawn indices so the full bedroom -> Oak -> rival opening can return
+    # from each interior. Synthetic incomplete fixtures retain preview mode.
+    warp_by_map={w["destination_map"]:w for w in data["warps"]}
+    opening_ids=(0x25,0x27,0x28)
+    opening_spawns=None
+    if all(key in warp_by_map for key in opening_ids):
+        opening_spawns=[]
+        for key in opening_ids:
+            door=warp_by_map[key]
+            x,z=door["x"],door["y"]+1
+            if z>=data["height"] or not data["cells"][z][x]["walkable"]:
+                raise ValueError("Extracted Red/Blue interior return spawn is blocked")
+            px,py,pz=point(data["width"],data["height"],x,z)
+            opening_spawns.append((px,py,pz,0))
+    scene=scene_source(
+        geom,bounds=tuple(info["bounds"]),
+        spawn=None if opening_spawns is not None else tuple(info["spawn"]),
+        spawn_list=opening_spawns,
+    )
+    info["interior_return_spawns"]=len(opening_spawns) if opening_spawns else 0
     scene=scene.replace('NA_BGM_FIELD_LOGIC','NA_BGM_DISABLED')
     room=room_source(geom)
     sh,sb=split_segment_header(scene,'gPalletSceneHeader')
     rh,rb=split_segment_header(room,'gPalletRoomHeader')
     info.update({"source":world["source"],"coverage":{
         "map_blocks":"extracted", "static_collision":"extracted",
-        "warps_and_connections":"extracted; destination scenes not included",
+        "warps_and_connections":"extracted; connected to existing indoor story where supported",
         "npc_positions_and_visibility":"extracted; background wandering not implemented",
         "dialogue":"extracted; default player/rival names rendered as RED/BLUE",
         "oak_event":"authored gen1_pallet_oak_v1 adapter; collision-aware 3D escort",
