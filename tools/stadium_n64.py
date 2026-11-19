@@ -212,7 +212,7 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
         parts.extend([
             f"#define STADIUM_FRAMES_{ci} {len(frames)}",
             f"/* {label}; sampled source frames: {', '.join(map(str, samples))} */",
-            f"static const Vtx sStadiumFrames{ci}[STADIUM_FRAMES_{ci}][STADIUM_BULBA_VERTS] = {{",
+            f"static const Vtx sStadiumFrames{ci}[STADIUM_FRAMES_{ci}][STADIUM_BULBA_VERTS] __attribute__((aligned(16))) = {{",
         ])
         for frame in frames:
             parts.append("    {")
