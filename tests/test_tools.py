@@ -126,6 +126,33 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("if (self->wasInBattle) {", runtime)
         self.assertIn("static void PrintShort(", runtime)
 
+    def test_identical_overlay_refresh_preserves_all_make_input_mtimes(self) -> None:
+        self.install()
+        targets = [
+            self.engine / "spec/spec",
+            self.engine / "src/code/title_setup.c",
+            self.engine / "src/code/poke_core.c",
+            self.engine / "src/code/poke_state.c",
+            self.engine / bootstrap.MANIFEST,
+        ]
+        old_time = 1_600_000_000_000_000_000
+        for path in targets:
+            os.utime(path, ns=(old_time, old_time))
+        self.install()
+        self.assertTrue(all(path.stat().st_mtime_ns == old_time for path in targets))
+
+        # Changing only our portable core should update exactly its generated
+        # copy, while unrelated ROM spec / game state inputs retain timestamps.
+        source = self.project / "src/core.c"
+        source.write_text(source.read_text() + "/* updated native source */\n")
+        self.install()
+        self.assertNotEqual(
+            (self.engine / "src/code/poke_core.c").stat().st_mtime_ns,
+            old_time,
+        )
+        for path in (self.engine / "spec/spec", self.engine / "src/code/title_setup.c"):
+            self.assertEqual(path.stat().st_mtime_ns, old_time)
+
     def test_oot_conversion_uses_stock_playstate_without_custom_gamestate(self) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             bootstrap.install(self.engine, boot_mode="oot")

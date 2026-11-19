@@ -202,11 +202,17 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
             known = current == desired or current == original.get(path) or sha(current) == old_manifest.get(path)
             if not known:
                 raise RuntimeError(f"Refusing to overwrite unexpected changes in {dest}")
+    # Preserve mtimes of identical sources. Make uses them as input to its
+    # dependency graph, so unconditional rewrites caused substantial rebuilds
+    # even when the project overlay had not changed.
     for path, desired in outputs.items():
         dest = engine / path
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(desired)
-    old_manifest_path.write_text(json.dumps({path: sha(data) for path, data in outputs.items()}, indent=2) + "\n")
+        if not dest.is_file() or dest.read_bytes() != desired:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(desired)
+    manifest_data = json.dumps({path: sha(data) for path, data in outputs.items()}, indent=2) + "\n"
+    if not old_manifest_path.is_file() or old_manifest_path.read_text() != manifest_data:
+        old_manifest_path.write_text(manifest_data)
     print(f"Installed poke-n64 overlay at {engine} (HackerOoT {LOCK['commit'][:12]}).")
 
 

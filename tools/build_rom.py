@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import os
 import shutil
@@ -78,6 +79,76 @@ def select_rom(explicit: Path | None, directory: Path) -> tuple[Path, bytes]:
     )
 
 
+# HackerOoT setup is an expensive ROM decomposition + asset extraction,
+# not part of the incremental Make graph. Cache only fully completed setups.
+SETUP_STAMP_NAME = ".poke-setup-cache.json"
+SETUP_CACHE_FORMAT = 1
+
+
+def setup_identity() -> dict[str, str | int]:
+    return {
+        "format": SETUP_CACHE_FORMAT,
+        "engine": LOCK["commit"],
+        "version": LOCK["version"],
+        "region": LOCK["region"],
+        "base_md5": LOCK["base_rom_md5"],
+    }
+
+
+def setup_prerequisites(engine: Path) -> tuple[Path, ...]:
+    version = LOCK["version"]
+    return (
+        engine / ".venv/bin/python3",
+        engine / f"baseroms/{version}/baserom-decompressed.z64",
+        engine / f"extracted/{version}/baserom",
+    )
+
+
+def setup_is_cached(engine: Path) -> bool:
+    stamp = engine / SETUP_STAMP_NAME
+    try:
+        previous = json.loads(stamp.read_text())
+    except (OSError, ValueError):
+        return False
+    return (
+        previous == setup_identity()
+        and all(path.exists() for path in setup_prerequisites(engine))
+    )
+
+
+def ensure_extracted(engine: Path, common: list[str], *, refresh: bool = False) -> bool:
+    """Run HackerOoT setup only if its successful extraction is not cached.
+
+    Return True when setup ran. Failed extractions never get stamped and will
+    be retried. To force a refresh after editing upstream asset XML use
+    --refresh-setup, which explicitly reruns the full upstream setup process.
+    """
+    if not refresh and setup_is_cached(engine):
+        print("Reusing extracted OoT assets and Python environment.", flush=True)
+        return False
+    print("Preparing OoT base assets (first run or requested refresh)...", flush=True)
+    subprocess.run([*common, "setup"], cwd=engine, check=True)
+    # Do not claim a cached setup if the upstream setup didn't produce files.
+    missing = [path for path in setup_prerequisites(engine) if not path.exists()]
+    if missing:
+        raise RuntimeError("OoT setup did not create expected files: " +
+                           ", ".join(str(path) for path in missing))
+    stamp = engine / SETUP_STAMP_NAME
+    temporary = stamp.with_suffix(".tmp")
+    temporary.write_text(json.dumps(setup_identity(), sort_keys=True) + "\n")
+    temporary.replace(stamp)
+    return True
+
+
+def compression_is_cached(engine: Path, compressed: Path) -> bool:
+    raw = engine / f"build/{LOCK['version']}/hackeroot-{LOCK['version']}.z64"
+    return (
+        compressed.is_file()
+        and raw.is_file()
+        and compressed.stat().st_mtime_ns >= raw.stat().st_mtime_ns
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     environment_rom = os.environ.get("POKE_N64_ROM")
@@ -90,6 +161,8 @@ def main() -> None:
                         help="build the stock Zelda boot path for diagnosing the custom state")
     parser.add_argument("--oot-conversion", action="store_true",
                         help="build Pokémon's native OoT PlayState total-conversion experiment")
+    parser.add_argument("--refresh-setup", action="store_true",
+                        help="force the full upstream ROM extraction and dependency setup")
     parser.add_argument("--check", action="store_true",
                         help="validate local input only; no downloads, builds or writes")
     parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
@@ -109,15 +182,23 @@ def main() -> None:
     mode = "control" if args.control_boot else ("oot" if args.oot_conversion else "poke")
     install(engine, boot_mode=mode)
     base = engine / "baseroms/ntsc-1.2/baserom.z64"
-    if base.exists() and base.read_bytes() != data:
-        raise RuntimeError(f"Refusing to overwrite an existing different base ROM at {base}")
-    base.write_bytes(data)
+    if base.exists():
+        if base.read_bytes() != data:
+            raise RuntimeError(f"Refusing to overwrite an existing different base ROM at {base}")
+    else:
+        base.parent.mkdir(parents=True, exist_ok=True)
+        base.write_bytes(data)
     jobs = max(1, args.jobs)
     common = [make, f"-j{jobs}", f"N_THREADS={jobs}", "VERSION=ntsc-1.2", "REGION=US", "DEBUG_FEATURES=0"]
-    subprocess.run([*common, "setup"], cwd=engine, check=True)
+    ensure_extracted(engine, common, refresh=args.refresh_setup)
     subprocess.run(common, cwd=engine, check=True)
-    subprocess.run([*common, "compress"], cwd=engine, check=True)
     generated = engine / "build/ntsc-1.2/hackeroot-ntsc-1.2-compressed-yaz.z64"
+    if compression_is_cached(engine, generated):
+        print("Reusing up-to-date compressed ROM.", flush=True)
+    else:
+        # Upstream's compress recipe touches code/spec deliberately. Only run
+        # that forced relink when the raw ROM changed or no compressed ROM exists.
+        subprocess.run([*common, "compress"], cwd=engine, check=True)
     if not generated.exists():
         raise RuntimeError(f"Build returned success without expected output: {generated}")
     label = ("poke-n64-control" if args.control_boot else

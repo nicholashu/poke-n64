@@ -156,6 +156,19 @@ class DockerBuildTests(unittest.TestCase):
         self.assertIn("--engine", launch)
         self.assertIn("poke-n64-oot.z64", output.getvalue())
 
+    def test_explicit_setup_refresh_is_forwarded_only_when_requested(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            docker_rom.run_in_docker(self.base, 2, oot_conversion=True,
+                                     refresh_setup=True)
+        launch = self.run.call_args_list[-1].args[0]
+        self.assertIn("--refresh-setup", launch)
+        self.assertIn("--oot-conversion", launch)
+        self.run.reset_mock()
+        with contextlib.redirect_stdout(io.StringIO()):
+            docker_rom.run_in_docker(self.base, 2, oot_conversion=True)
+        normal = self.run.call_args_list[-1].args[0]
+        self.assertNotIn("--refresh-setup", normal)
+
     def test_oot_toolchain_compiles_playstate_adapter_not_legacy_state(self) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             docker_rom.run_in_docker(None, 1, check_tools=True, oot_conversion=True)
