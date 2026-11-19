@@ -289,7 +289,7 @@ def export_skinned_glb(model: dict, target_height: float = 1.5,
                 continue
             rest = tuple(bone["t"]) + tuple(bone["r"]) + tuple(bone["s"])
             for label, index, count in [("translation", 0, 3),
-                                        ("rotation", 3, 4),
+                                        ("rotation", 3, 3),
                                         ("scale", 6, 3)]:
                 values = _clip_frames(components, rest, frames, index, count, factor)
                 # Rotations read three signed-binang angles but generate
