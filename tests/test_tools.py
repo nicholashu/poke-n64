@@ -9,6 +9,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -142,6 +143,72 @@ class RomTests(unittest.TestCase):
                 with self.assertRaises(FileNotFoundError):
                     build_rom.main()
             installer.assert_not_called()
+
+    def test_auto_detection_uses_contents_with_mixed_games_and_spaces(self) -> None:
+        directory = Path(self.temp.name) / "roms"
+        directory.mkdir()
+        wrong = directory / "A - Legend of Zelda (USA) (Rev 2).z64"
+        stadium = directory / "Pokemon Stadium (USA) (Rev 2).z64"
+        right = directory / "Legend of Zelda, The - Ocarina of Time (USA) (Rev 2).z64"
+        wrong.write_bytes(self.canonical[:-1] + b"\xff")
+        stadium.write_bytes(b"other game")
+        right.write_bytes(self.canonical)
+        before = {p.name: p.read_bytes() for p in directory.iterdir()}
+        selected, data = build_rom.select_rom(None, directory)
+        self.assertEqual(right, selected)
+        self.assertEqual(self.canonical, data)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+
+    def test_auto_detection_accepts_uppercase_swapped_image(self) -> None:
+        swapped = b"".join(self.canonical[i:i+2][::-1] for i in range(0, len(self.canonical), 2))
+        self.path = Path(self.temp.name) / "my dump.V64"
+        self.path.write_bytes(swapped)
+        selected, data = build_rom.select_rom(None, Path(self.temp.name))
+        self.assertEqual(self.path, selected)
+        self.assertEqual(self.canonical, data)
+        self.assertEqual(swapped, self.path.read_bytes())
+
+    def test_explicit_bad_input_does_not_fall_back_to_matching_neighbor(self) -> None:
+        self.path.write_bytes(self.canonical)
+        wrong = Path(self.temp.name) / "wrong.z64"
+        wrong.write_bytes(self.canonical[:-1] + b"\xff")
+        with self.assertRaisesRegex(RuntimeError, "Wrong base ROM"):
+            build_rom.select_rom(wrong, Path(self.temp.name))
+
+    def test_missing_empty_and_nonmatching_folders_explain_the_input_problem(self) -> None:
+        directory = Path(self.temp.name) / "roms"
+        with self.assertRaisesRegex(RuntimeError, "No local ROM folder"):
+            build_rom.select_rom(None, directory)
+        directory.mkdir()
+        (directory / "archive.zip").write_bytes(b"not an extracted ROM")
+        with self.assertRaisesRegex(RuntimeError, "archives must be extracted"):
+            build_rom.select_rom(None, directory)
+        (directory / "Pokemon Stadium.z64").write_bytes(self.canonical[:-1] + b"\xff")
+        with self.assertRaisesRegex(RuntimeError, "No matching OoT"):
+            build_rom.select_rom(None, directory)
+
+    def test_check_only_does_not_install_build_or_write(self) -> None:
+        self.path.write_bytes(self.canonical)
+        with patch.object(build_rom, "install") as installer, \
+             patch.object(build_rom.subprocess, "run") as run, \
+             patch.dict(os.environ, {"POKE_N64_ROM": ""}), \
+             patch.object(sys, "argv", ["build_rom.py", "--roms-dir", self.temp.name, "--check"]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            build_rom.main()
+        installer.assert_not_called()
+        run.assert_not_called()
+        self.assertIn("Validated OoT US NTSC 1.2", output.getvalue())
+        self.assertEqual([self.path], list(Path(self.temp.name).iterdir()))
+        self.assertEqual(self.canonical, self.path.read_bytes())
+
+    def test_make_environment_path_is_used_verbatim(self) -> None:
+        self.path = Path(self.temp.name) / "space (Rev 2) $literal.z64"
+        self.path.write_bytes(self.canonical)
+        with patch.dict(os.environ, {"POKE_N64_ROM": str(self.path)}), \
+             patch.object(sys, "argv", ["build_rom.py", "--check"]), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            build_rom.main()
+        self.assertIn(str(self.path), output.getvalue())
 
 
 if __name__ == "__main__":

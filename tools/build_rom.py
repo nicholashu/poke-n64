@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the native N64 ROM using a user-supplied OoT US NTSC 1.2 image."""
+"""Validate or build with a local OoT US NTSC 1.2 image, auto-detected in roms/."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -12,6 +12,9 @@ from bootstrap import DEFAULT_ENGINE, LOCK, ROOT, install
 
 
 def normalized_rom(path: Path) -> bytes:
+    # Skip other games/archives without loading large files into memory.
+    if path.stat().st_size != LOCK["base_rom_size"]:
+        raise RuntimeError("Expected a 32 MiB Ocarina of Time US NTSC 1.2 ROM.")
     data = path.read_bytes()
     if len(data) != LOCK["base_rom_size"]:
         raise RuntimeError("Expected a 32 MiB Ocarina of Time US NTSC 1.2 ROM.")
@@ -32,14 +35,67 @@ def normalized_rom(path: Path) -> bytes:
     return data
 
 
+def select_rom(explicit: Path | None, directory: Path) -> tuple[Path, bytes]:
+    """Select by verified contents, never by a filename or directory order alone.
+
+    An explicit invalid input fails rather than silently choosing another file.
+    Multiple copies of the expected image normalize to the same checksum; use
+    the first matching path in stable filename order. Other games are untouched.
+    """
+    if explicit is not None:
+        return explicit, normalized_rom(explicit)
+    if not directory.is_dir():
+        raise RuntimeError(
+            f"No local ROM folder at {directory}. Put your unzipped OoT US NTSC 1.2 "
+            "dump in roms/, or pass --rom /path/to/oot.z64."
+        )
+    extensions = {".z64", ".n64", ".v64", ".rom", ".bin"}
+    candidates = sorted(
+        (p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in extensions),
+        key=lambda p: (p.name.casefold(), p.name),
+    )
+    if not candidates:
+        raise RuntimeError(
+            f"No unzipped N64 images in {directory}. Expected .z64, .n64 or .v64; "
+            "archives must be extracted first."
+        )
+    rejected = []
+    for path in candidates:
+        try:
+            data = normalized_rom(path)
+        except (OSError, RuntimeError) as exc:
+            rejected.append(f"  {path.name}: {exc}")
+        else:
+            return path, data
+    detail = "\n".join(rejected[:8])
+    if len(rejected) > 8:
+        detail += f"\n  ... and {len(rejected) - 8} other nonmatching images."
+    raise RuntimeError(
+        f"No matching OoT US NTSC 1.2 image in {directory}. "
+        f"Expected normalized MD5 {LOCK['base_rom_md5']}.\n{detail}\n"
+        "Pokemon Stadium is an asset source for future work, not the base ROM."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--rom", type=Path, required=True)
+    environment_rom = os.environ.get("POKE_N64_ROM")
+    parser.add_argument("--rom", type=Path,
+                        default=Path(environment_rom) if environment_rom else None,
+                        help="explicit base ROM; otherwise inspect roms/ by checksum")
+    parser.add_argument("--roms-dir", type=Path, default=ROOT / "roms",
+                        help="folder to scan when no explicit ROM is supplied")
+    parser.add_argument("--check", action="store_true",
+                        help="validate local input only; no downloads, builds or writes")
     parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
     args = parser.parse_args()
     # Validate source before cloning, downloading build tools or modifying files.
-    data = normalized_rom(args.rom)
+    path, data = select_rom(args.rom, args.roms_dir)
+    print(f"Validated OoT US NTSC 1.2: {path}\nNormalized MD5: {LOCK['base_rom_md5']}", flush=True)
+    if args.check:
+        print("Input is ready. Run make rom to build the native target.")
+        return
     engine = args.engine.resolve()
     install(engine)
     base = engine / "baseroms/ntsc-1.2/baserom.z64"
@@ -49,7 +105,8 @@ def main() -> None:
     make = shutil.which("gmake") or shutil.which("make")
     if not make:
         raise RuntimeError("GNU make is required (Homebrew gmake on macOS).")
-    common = [make, f"-j{max(1, args.jobs)}", "VERSION=ntsc-1.2", "REGION=US", "DEBUG_FEATURES=0"]
+    jobs = max(1, args.jobs)
+    common = [make, f"-j{jobs}", f"N_THREADS={jobs}", "VERSION=ntsc-1.2", "REGION=US", "DEBUG_FEATURES=0"]
     subprocess.run([*common, "setup"], cwd=engine, check=True)
     subprocess.run(common, cwd=engine, check=True)
     subprocess.run([*common, "compress"], cwd=engine, check=True)

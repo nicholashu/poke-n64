@@ -71,6 +71,18 @@ make play ARGS="--seed 1 --save adventure.sav --no-clear"
 
 No ROM, extracted Nintendo asset or compiled game image is included in this repository. The build reads your local input, copies it into the ignored build directory, and never uploads it. Use a separate emulator save file for this project.
 
+### Put your local ROMs in `roms/`
+
+Create a `roms` folder in the project root and put your unzipped game dumps there. Filenames with spaces and parentheses work. The entire directory is excluded from Git and the Docker image build context, including archives and other files.
+
+```sh
+make check-rom
+```
+
+This checks the image size, byte order and checksum without downloading tools, building or modifying any files. The builder selects the matching **OoT US NTSC 1.2** image by contents. Other images, including Pokémon Stadium, are skipped. A filename containing `USA (Rev 2)` is a useful label but is not a substitute for this validation.
+
+With the native toolchain installed, `make rom` then builds from that folder. You can still choose an explicit input with `make rom ROM="/path/with spaces/oot.z64"`. Stadium is not used by the current build; keep it for the later model-import work.
+
 ### Container build
 
 The Dockerfile supplies the Linux cross compiler and native tool dependencies. On Apple Silicon, use the `linux/amd64` platform for the upstream build tools.
@@ -79,9 +91,11 @@ The Dockerfile supplies the Linux cross compiler and native tool dependencies. O
 docker build --platform linux/amd64 -t poke-n64-build .
 docker run --rm --platform linux/amd64 \
   -v "$PWD:/project" \
-  -v "/absolute/path/to/oot-ntsc-1.2.z64:/inputs/oot.z64:ro" \
-  poke-n64-build make rom ROM=/inputs/oot.z64
+  -v "$PWD/roms:/project/roms:ro" \
+  poke-n64-build make rom
 ```
+
+Run these commands from the project root after creating `roms/`. The second mount makes the input folder read-only inside the build container. Initial setup needs network access to fetch the pinned engine and build dependencies.
 
 The expected outputs are:
 
@@ -97,7 +111,9 @@ build/poke-n64.bps
 With the cross compiler and [HackerOoT's prerequisites](https://github.com/HackerN64/HackerOoT/blob/5fac42fa11278810ce9ca5b85d5d40b4136b5f57/INSTALLATION.md) installed:
 
 ```sh
-make rom ROM=/absolute/path/to/oot-ntsc-1.2.z64
+make rom
+# Or provide a base image outside roms/:
+make rom ROM="/absolute/path/to/oot-ntsc-1.2.z64"
 ```
 
 The helper installs the project overlay into `build/engine`, validates the base image, runs engine setup/build/compression and produces a BPS patch. It rejects unexpected edits in files it manages instead of resetting your checkout. Keep authored changes in this repository, outside `build/engine`.

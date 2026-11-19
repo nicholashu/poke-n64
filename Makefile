@@ -6,8 +6,10 @@ CPPFLAGS += -Iinclude
 CORE = src/core.c src/save.c
 HEADERS = include/poke.h
 HOST = build/poke-n64
+# Export paths verbatim rather than interpolating filenames into a shell command.
+export POKE_N64_ROM := $(ROM)
 
-.PHONY: all play test sanitize check-native engine rom clean help
+.PHONY: all play test sanitize check-native check-rom engine rom clean help
 all: $(HOST)
 
 build:
@@ -43,8 +45,11 @@ engine:
 check-native:
 	$(PYTHON) tools/check_native.py
 
+check-rom:
+	$(PYTHON) tools/build_rom.py --check
+
 rom:
-	$(PYTHON) tools/build_rom.py --rom "$(ROM)"
+	$(PYTHON) tools/build_rom.py
 
 clean:
 	rm -f build/poke-n64 build/test-core build/test-save build/test-core-sanitize build/test-save-sanitize
@@ -54,4 +59,6 @@ help:
 	@echo 'make test                  Gameplay, persistence and end-to-end checks'
 	@echo 'make sanitize              Core tests with ASan and UBSan'
 	@echo 'make check-native          Compile-check against pinned HackerOoT headers'
+	@echo 'make check-rom             Validate the Zelda image in roms/ without building'
+	@echo 'make rom                   Detect the matching Zelda image in roms/ and build'
 	@echo 'make rom ROM=/path/oot.z64  Build native ROM using your OoT NTSC 1.2 dump'

@@ -1,6 +1,7 @@
 .git
 build
 baseroms
+roms
 vendor
 assets/private
 assets/extracted

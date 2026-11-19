@@ -21,6 +21,7 @@ __pycache__/
 *.bps
 *.ips
 /baseroms/
+/roms/
 /assets/extracted/
 /assets/private/
 .DS_Store
