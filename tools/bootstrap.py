@@ -149,6 +149,13 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         # integration, but load an entirely original Pallet Town scene/room
         # payload in place of Kokiri's ROM segments. Native OoT player,
         # collision, camera and room systems stay intact.
+        # The original Kokiri Forest draw config references Zelda-specific
+        # scrolling textures, room draw parameters and materials. Pallet's
+        # original geometry has none of those. Keep the stable entrance/scene
+        # ID, but use OoT's generic draw configuration for this slot.
+        patch("include/tables/scene_table.h",
+              "DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST, 0, 0)",
+              "DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_DEFAULT, 0, 0)")
         # OoT loads scene/room commands from offset zero within each
         # segmented ROM payload. GCC reorders module-level data declarations,
         # so a single C object placed gPalletSceneHeader at offset 0x1004,
