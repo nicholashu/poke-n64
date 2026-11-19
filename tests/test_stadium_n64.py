@@ -29,6 +29,48 @@ class StadiumNativeAssetTests(unittest.TestCase):
         self.assertEqual(stats['frameCounts'], {'idle': 3, 'attack_default': 3})
         self.assertEqual(stats['textureCount'], 1)
 
+    def test_untextured_primitive_is_preserved_not_rejected(self):
+        model = animated_model()
+        model["primitives"][0]["texture"] = 65535
+        source, stats = emit_source(model, height=110, max_frames=3)
+        self.assertEqual(stats["untexturedPrimitives"], 1)
+        self.assertEqual(stats["triangles"], 1)
+        self.assertIn("currentTexture == 65535", source)
+        self.assertIn("G_CC_SHADE, G_CC_SHADE", source)
+        self.assertIn("gSPTexture(POLY_OPA_DISP++, 0, 0", source)
+        self.assertIn("{ 65535, 0, 3, 0, 1 }", source)
+
+    def test_textured_and_untextured_batches_switch_material(self):
+        model = animated_model()
+        second = dict(model["primitives"][0])
+        second["texture"] = 65535
+        model["primitives"].append(second)
+        source, stats = emit_source(model, max_frames=3)
+        self.assertEqual(stats["untexturedPrimitives"], 1)
+        self.assertEqual(stats["triangles"], 2)
+        self.assertIn("{ 0, 0, 3, 0, 1 }", source)
+        self.assertIn("{ 65535, 3, 3, 1, 1 }", source)
+        self.assertIn("G_CC_MODULATERGBA", source)
+        self.assertIn("G_CC_SHADE", source)
+
+    def test_animated_material_resolves_valid_map_when_default_missing(self):
+        model = animated_model()
+        primitive = model["primitives"][0]
+        primitive["texture"] = 65535
+        primitive["maps"] = {1: 0}
+        source, stats = emit_source(model, max_frames=3)
+        self.assertEqual(stats["untexturedPrimitives"], 0)
+        self.assertIn("{ 0, 0, 3, 0, 1 }", source)
+
+    def test_untextured_only_model_does_not_need_texture_arrays(self):
+        model = animated_model()
+        model["primitives"][0]["texture"] = 65535
+        model["textures"] = []
+        source, stats = emit_source(model, max_frames=3)
+        self.assertEqual(stats["untexturedPrimitives"], 1)
+        self.assertEqual(stats["textureCount"], 0)
+        self.assertNotIn("sStadiumTexture0", source)
+
     def test_unavailable_attack_is_not_faked(self):
         model = animated_model()
         model["contexts"]["attack_default"] = 65535
