@@ -71,6 +71,15 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("GAMESTATE_POKE", (self.engine / "include/tables/gamestate_table.h").read_text())
         for name in ("poke_core.o", "poke_save.o", "poke_state.o"):
             self.assertIn(name, (self.engine / "spec/spec").read_text())
+        # Boot probe and frame counter are source contracts, checked independently
+        # of the small mocked engine files used in these overlay tests.
+        runtime = (ROOT / "native/poke_state.c").read_text()
+        self.assertIn("static void DrawBoot(PokeState* self)", runtime)
+        self.assertIn("self->bootSplash = 1;", runtime)
+        self.assertIn("if (self->bootSplash)", runtime)
+        self.assertIn("if (!(state->input[0].cur.button & BTN_Z)) JournalLoad(self);", runtime)
+        self.assertEqual(runtime.count("self->drawBoxes = 0;"), 1)
+        self.assertIn("if (v == NULL) return;", runtime)
 
     def test_refreshes_own_sources_but_keeps_unrelated_files(self) -> None:
         self.install()

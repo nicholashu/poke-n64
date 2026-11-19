@@ -104,6 +104,7 @@ static void Box(PokeState* self, int x, int y, int z, int sx, int sy, int sz, u8
     if (self->drawBoxes >= MAX_DRAW_BOXES) return;
     self->drawBoxes++;
     v = GRAPH_ALLOC(gfx, sizeof(Vtx) * 8);
+    if (v == NULL) return; /* Never emit a vertex load from a failed allocation. */
     for (i = 0; i < 8; ++i) {
         int top = (i & 2) != 0;
         v[i].v.ob[0] = x + ((i & 1) ? sx : -sx);
@@ -182,8 +183,7 @@ static void DrawWorld(PokeState* self) {
             Box(self, wx, 0, wz, 49, 1, 49, tile == TILE_DOOR ? 172 : 204, tile == TILE_DOOR ? 151 : 190, tile == TILE_DOOR ? 115 : 142);
         }
     }
-    /* Draw player last, reserve enough primitives even in a dense tree corner. */
-    self->drawBoxes = 0;
+    /* Keep the frame-wide box budget. Never reset it midway through drawing. */
     Box(self, px - 8, 0, pz, 6, 16, 8, 51, 66, 93);
     Box(self, px + 8, 0, pz, 6, 16, 8, 51, 66, 93);
     Box(self, px, 16, pz, 17, 29, 11, 207, 70, 66);
@@ -321,10 +321,27 @@ static void Draw(PokeState* self) {
     DrawHud(self);
 }
 
+/* Deliberately minimal boot probe: only the engine's framebuffer-clear path.
+ * If this blue frame is absent, failure predates the map, vertex and HUD code.
+ * A enters the game, Z+A bypasses the SRAM read to isolate save problems.
+ */
+static void DrawBoot(PokeState* self) {
+    Gfx_SetupFrame(self->state.gfxCtx, true, 30, 98, 180);
+}
+
 static void Poke_Main(GameState* state) {
     PokeState* self = (PokeState*)state;
     u16 keys = ReadKeys(&state->input[0]);
     u8 request;
+    if (self->bootSplash) {
+        if (state->input[0].press.button & BTN_A) {
+            if (!(state->input[0].cur.button & BTN_Z)) JournalLoad(self);
+            self->bootSplash = 0;
+            self->game.previous_keys = KEY_A;
+        }
+        DrawBoot(self);
+        return;
+    }
     poke_update(&self->game, keys);
     request = poke_take_request(&self->game);
     if (request == REQUEST_SAVE) poke_note(&self->game, JournalSave(self) ? "Adventure saved to cartridge SRAM." : "Save failed. Previous save preserved.");
@@ -350,7 +367,8 @@ void Poke_Init(GameState* state) {
     self->saveGeneration = 0;
     self->saveSlot = -1;
     self->drawBoxes = 0;
-    JournalLoad(self);
+    self->bootSplash = 1;
+    /* Defer cartridge read until the boot probe has rendered successfully. */
     state->main = Poke_Main;
     state->destroy = Poke_Destroy;
     state->running = true;

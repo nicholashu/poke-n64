@@ -13,6 +13,7 @@ typedef struct PokeState {
     u32 saveGeneration;
     s32 saveSlot;
     s32 drawBoxes;
+    s32 bootSplash;
 } PokeState;
 
 void Poke_Init(GameState* state);

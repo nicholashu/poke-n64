@@ -134,6 +134,17 @@ make rom ROM="/absolute/path/to/oot-ntsc-1.2.z64"
 
 The helper validates the base image, checks the host toolchain, installs the project overlay into `build/engine`, then runs engine setup/build/compression and produces a BPS patch. It rejects unexpected edits in files it manages instead of resetting your checkout.
 
+### Boot-screen diagnostic
+
+The native build now starts on a **solid blue screen** before displaying the 3D scene. This is intentional: it exercises the minimal N64 framebuffer-clear path without running the map renderer, helping distinguish an early boot/link issue from a scene-rendering issue.
+
+- Press **A** on the blue screen to load cartridge progress and enter Pallet Town.
+- Hold **Z + A** on the blue screen to enter Pallet Town **without reading cartridge SRAM**, for diagnosing startup/save faults. This does not delete existing progress.
+- If the screen stays **black** before ever showing blue, the game has not reached this diagnostic frame; investigate ROM linkage, boot state and emulator logs before changing models.
+- If blue works but the game goes black after A, retry with Z + A. This separates the SRAM path from the full scene renderer.
+
+The previous ROM build's boot status was unverified; this is a diagnostic instrument, not proof that the boot issue is resolved. The first frame intentionally does not include text or a logo, to avoid depending on the higher-level rendering path being debugged.
+
 ### N64 controls
 
 | Controller | Action |
