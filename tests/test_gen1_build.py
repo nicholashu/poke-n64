@@ -136,7 +136,10 @@ class PalletOverlayTests(unittest.TestCase):
         self.assertNotIn("gSaveContext.save.entranceIndex = ENTR_KOKIRI_FOREST_0;", entry)
         # Imported outdoor geometry and text must share the five-room
         # authored story, including the complete starter/rival battle.
-        runtime = (self.engine / "src/code/poke_oot.c").read_text()
+        # The overlay fixture intentionally installs a placeholder copy of
+        # native/oot_conversion.c; inspect the real tracked implementation
+        # instead of falsely expecting runtime content in the placeholder.
+        runtime = (ROOT / "native/oot_conversion.c").read_text()
         self.assertIn("s32 PokeOot_ImportedPallet(void) { return 0; }", runtime)
         self.assertIn("intro_line(s,g,(unsigned)i)", runtime)
         for name in bootstrap.ORDER[1:]:
