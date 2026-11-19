@@ -85,7 +85,7 @@ This checks the image size, byte order and checksum without downloading tools, b
 
 ### Docker build (recommended on macOS)
 
-Install [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/), open it, and wait until its engine is running. On Apple Silicon, use Docker Desktop's Apple Silicon installer. The wrapper runs the build as **`linux/amd64`** for compatibility with the upstream tools, including on an Apple Silicon Mac. Docker Engine on Linux also works.
+Install [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/), open it, and wait until its engine is running. On Apple Silicon, use Docker Desktop's Apple Silicon installer. The wrapper reads the Docker daemon's architecture and builds natively as **`linux/arm64`** on an ARM daemon or **`linux/amd64`** on an Intel/AMD daemon. Docker Engine on Linux also works. Both platforms cross-compile the game for the same N64 CPU.
 
 Run these commands from the project root with Python 3 and `make` available:
 
@@ -101,7 +101,15 @@ The wrapper validates the ROM before downloading or building anything, checks th
 
 Docker receives only the minimal `tools/docker-context` directory as its image build context; repository source and ROM bytes are not sent to the image builder. At runtime, the project is mounted locally at `/project`, the selected ROM is mounted read-only at `/inputs/base.z64`, and `roms/` is also mounted read-only when present. An explicit ROM path outside the project works the same way.
 
-The Docker build maintains its engine checkout, Linux tools and extracted assets in **`build/docker-engine`**. Native builds use **`build/engine`**. Keeping those directories separate prevents a container from reusing macOS executables or a host Python environment. Keep authored changes in this repository, outside either generated engine checkout.
+The Docker build maintains a separate engine checkout, Linux tools and extracted assets for each architecture:
+
+| Build environment | Generated engine directory |
+| --- | --- |
+| Docker ARM64 | `build/docker-engine-arm64` |
+| Docker AMD64 | `build/docker-engine-amd64` |
+| Native host toolchain | `build/engine` |
+
+This separation prevents a build from reusing executables or Python environments made for another platform. Keep authored changes in this repository, outside these generated engine checkouts.
 
 Both build methods write the same outputs:
 
@@ -147,7 +155,7 @@ make check-native-docker
 
 `make test` exercises gameplay, saves and a complete input-driven console journey. `make sanitize` repeats the C tests with AddressSanitizer and UndefinedBehaviorSanitizer.
 
-**`make check-native-docker` needs no ROM.** With Docker running, it builds the actual toolchain image, checks GNU Make and the MIPS toolchain inside the container, and compiles six big-endian VR4300/MIPS objects against the pinned engine headers: the shared core, serializer, native state, setup hook, game-state table and dispatcher. It also dry-runs the engine's `venv` Make target to check the upstream Makefile and its toolchain detection. It uses `build/docker-engine`, the same isolated checkout as `make rom-docker`. This checks the container and native integration without linking or running a game image.
+**`make check-native-docker` needs no ROM.** With Docker running, it builds the actual toolchain image, checks GNU Make and the MIPS toolchain inside the container, installs the engine's Python dependencies, and builds its host tools. It also compiles six big-endian VR4300/MIPS objects against the pinned engine headers: the shared core, serializer, native state, setup hook, game-state table and dispatcher. It uses the same architecture-specific engine checkout as `make rom-docker`. This checks the container, tool setup and native integration without extracting a ROM, linking a game image or running the game.
 
 For a host toolchain, `make check-native` uses `build/engine` and checks the same six sources. With no MIPS compiler it reports a weaker 32-bit host syntax check. To require actual target objects:
 
@@ -157,7 +165,7 @@ python3 tools/check_native.py --require-mips
 MIPS_CC=/path/to/mips-linux-gnu-gcc python3 tools/check_native.py --require-mips
 ```
 
-`MIPS_CC` selects a compiler for the object checker only; it does not configure the full upstream ROM build. CI includes direct MIPS compilation and a separate Ubuntu 24.04 job running `make check-native-docker`. Neither requires a ROM. Nothing under `build/` is committed.
+`MIPS_CC` selects a compiler for the object checker only; it does not configure the full upstream ROM build. CI includes direct MIPS compilation and Docker jobs running `make check-native-docker` on both `ubuntu-24.04` (AMD64) and `ubuntu-24.04-arm` (ARM64). These checks require no ROM. Nothing under `build/` is committed.
 
 ## Architecture
 

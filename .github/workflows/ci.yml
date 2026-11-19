@@ -36,10 +36,18 @@ jobs:
         run: python3 tests/test_tools.py
 
   n64-docker:
-    name: Docker toolchain and native MIPS compilation (no ROM)
-    runs-on: ubuntu-24.04
+    name: Docker toolchain (${{ matrix.arch }}, no ROM)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Build the image and compile six native objects
+      - name: Build the image, host tools and six native objects
         run: make check-native-docker

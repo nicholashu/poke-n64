@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Build on macOS/Linux using the project's amd64 Linux toolchain container."""
+"""Build using a Linux toolchain container native to the active Docker engine."""
 from __future__ import annotations
 
 import argparse
 import csv
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -15,8 +16,6 @@ from bootstrap import ROOT
 from build_rom import select_rom
 
 IMAGE = "poke-n64-build"
-PLATFORM = "linux/amd64"
-ENGINE = "/project/build/docker-engine"
 
 
 def bind_mount(source: Path, target: str, readonly: bool = False) -> str:
@@ -29,7 +28,8 @@ def bind_mount(source: Path, target: str, readonly: bool = False) -> str:
     return result.getvalue()[:-2]
 
 
-def docker_cli() -> str:
+def docker_environment() -> tuple[str, str]:
+    """Return the CLI and native daemon platform, including with remote contexts."""
     executable = shutil.which("docker")
     if not executable:
         raise RuntimeError(
@@ -39,7 +39,8 @@ def docker_cli() -> str:
         )
     try:
         result = subprocess.run(
-            [executable, "info", "--format", "{{.ServerVersion}}"],
+            [executable, "info", "--format",
+             '{"os":{{json .OSType}},"arch":{{json .Architecture}}}'],
             capture_output=True, text=True, timeout=30, check=False,
         )
     except subprocess.TimeoutExpired as exc:
@@ -53,44 +54,70 @@ def docker_cli() -> str:
             "and wait until it is running, then retry make rom-docker. "
             "If using another Docker runtime, check its active context and permissions."
         )
-    return executable
+    try:
+        details = json.loads(result.stdout)
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("Docker returned invalid system information. Check docker info and retry.") from exc
+    if not isinstance(details, dict) or not all(isinstance(details.get(k), str) for k in ("os", "arch")):
+        raise RuntimeError("Docker did not report its operating system and architecture. Check docker info.")
+    if details["os"].lower() != "linux":
+        raise RuntimeError("The N64 builder requires a Linux Docker engine. Select Linux containers and retry.")
+    architectures = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}
+    architecture = architectures.get(details["arch"].lower())
+    if architecture is None:
+        raise RuntimeError(f"Unsupported Docker engine architecture: {details['arch']!r}. Expected AMD64 or ARM64.")
+    return executable, "linux/" + architecture
 
 
 def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False) -> None:
     if base is None and not check_tools:
         raise RuntimeError("A validated base ROM is required.")
-    executable = docker_cli()
+    executable, platform = docker_environment()
+    architecture = platform.split("/")[1]
+    image = f"{IMAGE}-{architecture}"
+    engine = f"/project/build/docker-engine-{architecture}"
+    jobs = max(1, jobs)
+    print(f"Using native Docker platform: {platform}", flush=True)
     # Only the build recipe is sent to the Docker image builder. Source code,
     # input ROMs and output files are supplied through local runtime mounts.
     context = ROOT / "tools/docker-context"
+    # docker build's implicit builder follows the active daemon. A user-selected
+    # buildx builder might be on another CPU, so omit that override for this call.
+    build_environment = os.environ.copy()
+    build_environment.pop("BUILDX_BUILDER", None)
     subprocess.run(
-        [executable, "build", "--platform", PLATFORM, "--tag", IMAGE,
+        [executable, "build", "--platform", platform, "--tag", image,
          "--file", str(ROOT / "Dockerfile"), str(context)],
-        cwd=ROOT, check=True,
+        cwd=ROOT, env=build_environment, check=True,
     )
-    command = [executable, "run", "--rm", "--platform", PLATFORM,
+    command = [executable, "run", "--rm", "--platform", platform,
                "--mount", bind_mount(ROOT.resolve(), "/project")]
     roms = ROOT / "roms"
     if roms.is_dir():
         command += ["--mount", bind_mount(roms.resolve(), "/project/roms", readonly=True)]
     if check_tools:
-        # Also run the host preflight in the actual container; no ROM is needed.
-        subprocess.run(command + [IMAGE, "python3", "tools/build_env.py"], cwd=ROOT, check=True)
-        subprocess.run(command + [IMAGE, "python3", "tools/check_native.py", "--require-mips",
-                                  "--engine", ENGINE], cwd=ROOT, check=True)
-        # Exercise the upstream toolchain detection too. This target's dry run
-        # parses the real Makefiles without installing dependencies or using ROMs.
-        command += [IMAGE, "make", "--directory", ENGINE, "--dry-run", "VERSION=ntsc-1.2",
-                    "REGION=US", "DEBUG_FEATURES=0", f"N_THREADS={max(1, jobs)}", "venv"]
-    else:
-        command += ["--mount", bind_mount(base.resolve(), "/inputs/base.z64", readonly=True),
-                    IMAGE, "python3", "tools/build_rom.py", "--rom", "/inputs/base.z64",
-                    "--engine", ENGINE, "--jobs", str(max(1, jobs))]
+        # Exercise the actual host tools and native Python dependencies on each
+        # CPU. Object compilation alone cannot reveal host architecture failures.
+        checks = [
+            ["python3", "tools/build_env.py"],
+            ["python3", "tools/check_native.py", "--require-mips", "--engine", engine],
+            ["make", "--directory", engine, "VERSION=ntsc-1.2", "REGION=US",
+             "DEBUG_FEATURES=0", f"N_THREADS={jobs}", "venv"],
+            ["make", "--directory", engine + "/tools", f"-j{jobs}"],
+            [engine + "/.venv/bin/python3", "-c",
+             "import crunch64, ipl3checksum, pygfxd, rabbitizer, yaml, elftools; "
+             "print('Native Python build dependencies loaded successfully.')"],
+            [engine + "/tools/Flips/flips", "--version"],
+        ]
+        for arguments in checks:
+            subprocess.run(command + [image, *arguments], cwd=ROOT, check=True)
+        print("Docker host tools and native objects checked. No ROM was linked or run.")
+        return
+    command += ["--mount", bind_mount(base.resolve(), "/inputs/base.z64", readonly=True),
+                image, "python3", "tools/build_rom.py", "--rom", "/inputs/base.z64",
+                "--engine", engine, "--jobs", str(jobs)]
     subprocess.run(command, cwd=ROOT, check=True)
-    if check_tools:
-        print("Docker toolchain and native objects checked. No ROM was linked or run.")
-    else:
-        print(f"Outputs: {ROOT / 'build/poke-n64.z64'} and {ROOT / 'build/poke-n64.bps'}")
+    print(f"Outputs: {ROOT / 'build/poke-n64.z64'} and {ROOT / 'build/poke-n64.bps'}")
 
 
 def main() -> None:
