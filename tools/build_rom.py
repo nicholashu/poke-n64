@@ -182,9 +182,12 @@ def main() -> None:
     mode = "control" if args.control_boot else ("oot" if args.oot_conversion else "poke")
     install(engine, boot_mode=mode)
     base = engine / "baseroms/ntsc-1.2/baserom.z64"
-    if base.exists() and base.read_bytes() != data:
-        raise RuntimeError(f"Refusing to overwrite an existing different base ROM at {base}")
-    base.write_bytes(data)
+    if base.exists():
+        if base.read_bytes() != data:
+            raise RuntimeError(f"Refusing to overwrite an existing different base ROM at {base}")
+    else:
+        base.parent.mkdir(parents=True, exist_ok=True)
+        base.write_bytes(data)
     jobs = max(1, args.jobs)
     common = [make, f"-j{jobs}", f"N_THREADS={jobs}", "VERSION=ntsc-1.2", "REGION=US", "DEBUG_FEATURES=0"]
     ensure_extracted(engine, common, refresh=args.refresh_setup)
