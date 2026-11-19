@@ -1,3 +1,52 @@
+## Animated Bulbasaur and native OoT battle preview
+
+The conversion branch now also includes an opt-in, end-to-end **animated** pipeline. It reads the actual Stadium DSM3 bone tracks, emits an armature and idle/attack animation clips in GLB, and optionally generates F3DEX3-ready C data for native N64.
+
+```sh
+# Re-use the DSM3 file you successfully extracted previously.
+python3 tools/stadium_export.py --pack assets/private/stadium/001/source.dsm --species 1 --animated
+
+# Bake real skeleton animation into bounded N64 display-list vertex frames.
+make stadium-n64
+
+# Build the separate OoT PlayState ROM, with generated private asset if present.
+make rom-oot-docker
+```
+
+New private outputs:
+
+```text
+assets/private/stadium/001/
+  source.dsm
+  stadium-001-animated.glb
+  stadium-001-animated.json
+  stadium_bulbasaur_n64.c
+```
+
+The skinned GLB has joint weights, inverse-bind matrices, and Stadium **idle** and **attack_default** animation curves where those contexts exist. Animation track frequencies are 30 FPS. Blender should show an armature and animation clips when importing the GLB.
+
+The N64 path is deliberately a separate optimized representation rather than shipping the GLB inside the ROM. It samples at most 12 key poses per animation, bakes weighted mesh geometry offline, batches triangles for the 32-vertex RSP limit, and downsamples textures to RGBA5551 within 4 KiB TMEM. Its source file is generated under ignored `assets/private/` and copied into the OoT checkout at build time. Without it, the native build uses a copyright-free stub.
+
+### In-game controls (temporary Kokiri Forest test)
+
+First choose **Bulbasaur** using L+C-left. The test controls are:
+
+- **L+R+A:** play a Stadium Bulbasaur attack animation next to Link
+- **L+R+B:** start a level-4 wild Rattata turn-based battle with a native OoT sub-camera
+- **D-pad up/down, A, B:** navigate Pokémon's Fight/Bag/Party/Run and moves; the Pokémon rules resolve HP, PP and turns
+
+The enemy currently has an **original cuboid placeholder**, not a Stadium Rattata model. Kokiri Forest is also a test arena, not a finished battle background. The camera uses OoT's sub-camera system, then returns to its native follow camera when the battle ends.
+
+The normal `make rom-docker` prototype is unchanged. The new asset and battle are enabled only in the experimental OoT total conversion.
+
+### Verification boundary
+
+Automated tests use an original synthetic one-triangle model to verify skinned GLB structure and animation channels, the offline N64 vertex frame generator, texture downsampling and a **real MIPS cross-compile of generated C graphics code**. Those tests do not prove your private ROM's Bulbasaur animations are visually correct, nor do they replace a gameplay test in ParaLLEl N64.
+
+Use your previously working Stadium ROM revision; the source extractor still only explicitly supports the known US 1.0 layout. Never upload generated C, models or the ROM to a public repository.
+
+---
+
 # Pokémon Stadium to OoT asset export
 
 **Status:** First working **static** model exporter. This pipeline produces Blender-readable glTF 2.0 GLB geometry with embedded RGBA textures and a JSON animation index. Full skinned animation export and native OoT actor integration are separate steps.
