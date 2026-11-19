@@ -110,6 +110,67 @@ class ScenarioTests(unittest.TestCase):
                     {"action": "key_chord", "keycodes": [14, 123], "seconds": seconds},
                 ]})
 
+    def test_strict_battle_smoke_scenario_and_hp_assertion_validation(self):
+        scenario = json.loads(
+            (ROOT / "tests/rom_scenarios/battle_smoke.json").read_text()
+        )
+        steps = e2e.validate_scenario(scenario)["steps"]
+        self.assertEqual(steps[-3]["action"], "assert_hp_decreased")
+        assertion = steps[-3]
+        self.assertEqual(assertion["expected_max_hp"], 17)
+        self.assertEqual(assertion["before"], "battle_menu")
+        self.assertEqual(assertion["after"], "after_attack")
+        for field, value, diagnostic in (
+            ("before", "missing", "both HP screenshots"),
+            ("expected_max_hp", 0, "expected_max_hp"),
+            ("expected_max_hp", True, "expected_max_hp"),
+            ("min_damage", 0, "min_damage"),
+            ("min_damage", 20, "min_damage"),
+        ):
+            broken = json.loads(json.dumps(scenario))
+            for step in broken["steps"]:
+                if step["action"] == "assert_hp_decreased":
+                    step[field] = value
+            with self.assertRaisesRegex(ValueError, diagnostic):
+                e2e.validate_scenario(broken)
+
+    def test_enemy_hp_parser_recovers_real_small_hud_ocr(self):
+        # These are literal macOS Vision OCR readings from the 2026-11-19
+        # private native-Rattata battle, not synthetic guesswork.
+        initial = "HILO Rattata L4\nHР 17717\nBulbasaur LS\nНР 20/20\nFight"
+        struck = "HILO Rattata L4\nHР 12/17\nBulbasaur LS\nНР 20/20\nBulbasaur used Tackle"
+        self.assertEqual(e2e.extract_enemy_hp(initial, 17), 17)
+        self.assertEqual(e2e.extract_enemy_hp(struck, 17), 12)
+        self.assertEqual(e2e.extract_enemy_hp("HP 7/17\nHP 20/20", 17), 7)
+        self.assertEqual(e2e.extract_enemy_hp("HP 7717\nHP 20/20", 17), 7)
+        for bad in ("no HP here", "HP 20/20", "HP 99917"):
+            with self.assertRaises(ValueError):
+                e2e.extract_enemy_hp(bad, 17)
+
+    def test_hp_decreased_assertion_uses_numeric_enemy_hp_not_pixels(self):
+        runner = e2e.Runner({"name": "fake", "steps": [
+            {"action": "screenshot", "name": "before"},
+            {"action": "screenshot", "name": "after"},
+            {"action": "assert_hp_decreased", "before": "before",
+             "after": "after", "expected_max_hp": 17},
+        ]}, ROOT / "fake-rom.z64", ROOT / "build")
+        runner.images = {"before": Path("before.png"), "after": Path("after.png")}
+        runner.remote = object()
+        from unittest.mock import patch
+        with patch.object(e2e, "recognize_text", side_effect=[
+            "HР 17717\nНР 20/20", "HР 12/17\nНР 20/20",
+        ]) as ocr:
+            result = runner.step({"action": "assert_hp_decreased", "before": "before",
+                                  "after": "after", "expected_max_hp": 17})
+            self.assertIn("17/17 -> 12/17", result)
+            self.assertEqual(ocr.call_count, 2)
+        with patch.object(e2e, "recognize_text", side_effect=[
+            "HР 17717", "HР 17717",
+        ]):
+            with self.assertRaisesRegex(AssertionError, "did not decrease"):
+                runner.step({"action": "assert_hp_decreased", "before": "before",
+                             "after": "after", "expected_max_hp": 17})
+
     def test_stick_coordinates_and_frame_limits(self):
         for bad in (32768, -32769, 1.2, None):
             with self.assertRaises(ValueError):
