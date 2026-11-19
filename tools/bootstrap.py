@@ -10,7 +10,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from pallet_town import build as build_pallet_scene
+from pallet_town import build as build_pallet_scene, unused_room_source
 import subprocess
 import sys
 
@@ -155,6 +155,18 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         patch("spec/scenes_n64.inc",
               'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"',
               'include "$(BUILD_DIR)/src/code/poke_pallet_room.o"')
+        # Keep the existing ROM DMA slots (and ID ordering) for Kokiri's
+        # unused rooms 1 and 2. Their old meshes reference shared Kokiri
+        # textures, which are intentionally no longer in the Pallet scene.
+        for room_index in (1, 2):
+            patch("spec/scenes_n64.inc",
+                  'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_' +
+                  str(room_index) + '.o"',
+                  'include "$(BUILD_DIR)/src/code/poke_pallet_unused_room_' +
+                  str(room_index) + '.o"')
+            outputs["src/code/poke_pallet_unused_room_" + str(room_index) + ".c"] = (
+                unused_room_source(room_index).encode()
+            )
         pallet_scene, pallet_room, _ = build_pallet_scene()
         outputs["src/code/poke_pallet_scene.c"] = pallet_scene.encode()
         outputs["src/code/poke_pallet_room.c"] = pallet_room.encode()
