@@ -17,7 +17,7 @@
 #define WORLD_TILE 100
 #define POKE_PI 3.14159265f
 #define POKE_TWO_PI 6.2831853f
-#define FIELD_CAMERA_DISTANCE 340.0f
+#define FIELD_CAMERA_DISTANCE 285.0f
 #define MAX_DRAW_BOXES 260
 #define JOURNAL_SIZE 512
 #define JOURNAL_DATA 16
@@ -107,11 +107,19 @@ static f32 CameraApproach(f32 current, f32 target, f32 weight) {
     return current + (target - current) * weight;
 }
 
+static f32 CameraAbs(f32 value) {
+    return value < 0.0f ? -value : value;
+}
+
+static f32 CameraWrapYaw(f32 angle) {
+    while (angle > POKE_PI) angle -= POKE_TWO_PI;
+    while (angle < -POKE_PI) angle += POKE_TWO_PI;
+    return angle;
+}
+
 static f32 CameraApproachYaw(f32 current, f32 target, f32 weight) {
-    f32 difference = target - current;
-    while (difference > POKE_PI) difference -= POKE_TWO_PI;
-    while (difference < -POKE_PI) difference += POKE_TWO_PI;
-    return current + difference * weight;
+    f32 difference = CameraWrapYaw(target - current);
+    return CameraWrapYaw(current + difference * weight);
 }
 
 static f32 FacingYaw(s32 dx, s32 dz) {
@@ -128,15 +136,17 @@ static f32 FacingYaw(s32 dx, s32 dz) {
     return dz > 0 ? POKE_PI : 0.0f;
 }
 
-/* Camera-relative N64 analog/D-pad input is adapted to the platform-neutral
- * eight-direction movement model. Menus and the host harness are unchanged.
+/* Use the camera heading at the START of a stick gesture to map walking.
+ * Otherwise, the chase camera turning to follow Red feeds back into analog
+ * movement and makes holding forward continuously steer him round corners.
+ * Releasing the stick establishes a fresh camera-relative movement basis.
  */
 static u16 ReadFieldKeys(PokeState* self, const Input* input) {
     s32 sx = input->cur.stick_x;
     s32 sy = input->cur.stick_y;
     u16 held = input->cur.button;
     u16 keys = ReadKeys(input) & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT);
-    f32 worldX, worldZ;
+    f32 worldX, worldZ, absX, absZ;
     s32 dx = 0, dz = 0;
 
     if (held & BTN_DLEFT) sx = -70;
@@ -144,89 +154,127 @@ static u16 ReadFieldKeys(PokeState* self, const Input* input) {
     if (held & BTN_DUP) sy = 70;
     if (held & BTN_DDOWN) sy = -70;
 
-    /* Z recentres behind Red, matching OoT's basic camera behaviour.
-     * C-left and C-right offer optional orbit controls in this prototype.
-     * These can be reassigned to items when the inventory system expands. */
-    if (held & BTN_CLEFT) self->cameraYaw -= 0.045f;
-    if (held & BTN_CRIGHT) self->cameraYaw += 0.045f;
-    if (held & BTN_Z) self->cameraYaw = CameraApproachYaw(
-        self->cameraYaw, self->playerYaw, 0.35f);
+    /* C-buttons orbit manually. Leave that angle alone briefly after release.
+     * Z-lock brings the camera behind Red without an instantaneous yaw jump. */
+    if (held & BTN_CLEFT) {
+        self->cameraYaw = CameraWrapYaw(self->cameraYaw - 0.040f);
+        self->orbitHoldFrames = 75;
+    }
+    if (held & BTN_CRIGHT) {
+        self->cameraYaw = CameraWrapYaw(self->cameraYaw + 0.040f);
+        self->orbitHoldFrames = 75;
+    }
+    if (held & BTN_Z) {
+        self->cameraYaw = CameraApproachYaw(self->cameraYaw, self->playerYaw, 0.28f);
+        self->orbitHoldFrames = 12;
+    }
 
     if (sx > -22 && sx < 22) sx = 0;
     if (sy > -22 && sy < 22) sy = 0;
     if (sx == 0 && sy == 0) {
+        self->movementActive = 0;
         if (self->cameraIdleFrames < 120) self->cameraIdleFrames++;
         return keys;
     }
     self->cameraIdleFrames = 0;
-    worldX = (f32)sx * Math_CosF(self->cameraYaw) + (f32)sy * Math_SinF(self->cameraYaw);
-    worldZ = (f32)sx * Math_SinF(self->cameraYaw) - (f32)sy * Math_CosF(self->cameraYaw);
-    if (worldX > 20.0f) { keys |= KEY_RIGHT; dx = 1; }
-    else if (worldX < -20.0f) { keys |= KEY_LEFT; dx = -1; }
-    if (worldZ > 20.0f) { keys |= KEY_DOWN; dz = 1; }
-    else if (worldZ < -20.0f) { keys |= KEY_UP; dz = -1; }
+    if (!self->movementActive) {
+        self->movementBasisYaw = self->cameraYaw;
+        self->movementActive = 1;
+    }
+    worldX = (f32)sx * Math_CosF(self->movementBasisYaw) +
+             (f32)sy * Math_SinF(self->movementBasisYaw);
+    worldZ = (f32)sx * Math_SinF(self->movementBasisYaw) -
+             (f32)sy * Math_CosF(self->movementBasisYaw);
+    absX = CameraAbs(worldX);
+    absZ = CameraAbs(worldZ);
+    /* Eight sectors, with the diagonal sector starting at about 22.5 deg.
+     * Unlike a fixed 20-unit threshold, this does not vary with stick strength.
+     */
+    if (absX > absZ * 0.4142f) {
+        if (worldX > 0.0f) { keys |= KEY_RIGHT; dx = 1; }
+        else { keys |= KEY_LEFT; dx = -1; }
+    }
+    if (absZ > absX * 0.4142f) {
+        if (worldZ > 0.0f) { keys |= KEY_DOWN; dz = 1; }
+        else { keys |= KEY_UP; dz = -1; }
+    }
     if (dx || dz) self->playerYaw = FacingYaw(dx, dz);
     return keys;
 }
 
-/* Push the camera in front of walls/trees instead of placing it inside them.
- * This intentionally uses coarse prototype tile collision, not OoT's scene
- * collision. The future Blender maps should switch to real camera raycasts.
+/* Sample the actual line from Red to the camera, rather than blocking the
+ * camera behind roofs that it is already high enough to see over. This is a
+ * provisional tile-based visibility check until real OoT collision is used.
  */
 static f32 CameraFreeDistance(f32 px, f32 pz, f32 yaw) {
     f32 sine = Math_SinF(yaw);
     f32 cosine = Math_CosF(yaw);
     f32 distance;
-    for (distance = 130.0f; distance <= FIELD_CAMERA_DISTANCE; distance += 35.0f) {
+    for (distance = 100.0f; distance <= FIELD_CAMERA_DISTANCE; distance += 15.0f) {
         f32 cx = px - sine * distance;
         f32 cz = pz + cosine * distance;
+        f32 rayHeight = 65.0f + (180.0f - 65.0f) *
+                        (distance / FIELD_CAMERA_DISTANCE);
         int tx = (int)(cx / WORLD_TILE);
         int tz = (int)(cz / WORLD_TILE);
         PokeTile tile = poke_tile(tx, tz);
-        if (tile == TILE_WALL || tile == TILE_TREE) {
-            return distance - 34.0f;
+        if (tx <= 0 || tz <= 0 || tx >= POKE_MAP_W - 1 ||
+            tz >= POKE_MAP_H - 1 ||
+            (tile == TILE_WALL && rayHeight < 126.0f) ||
+            (tile == TILE_TREE && rayHeight < 113.0f)) {
+            /* Leave a small gap in front of the obstruction. */
+            return distance > 115.0f ? distance - 24.0f : 90.0f;
         }
     }
     return FIELD_CAMERA_DISTANCE;
 }
 
+/* Keep camera position and aim on ONE smoothed pivot. Previously the eye
+ * lagged independently while the look-at point moved immediately with Red,
+ * causing visible sway and occasional camera crossings near house corners.
+ */
 static void FieldCamera(PokeState* self, Vec3f* eye, Vec3f* at) {
     f32 px = (f32)self->game.x * WORLD_TILE / POKE_TILE;
     f32 pz = (f32)self->game.z * WORLD_TILE / POKE_TILE;
-    f32 yaw = self->cameraYaw;
-    f32 sine, cosine, distance;
-    f32 desiredX, desiredY, desiredZ;
+    f32 sine, cosine, freeDistance;
+    f32 yaw;
 
-    /* Follow Red's facing after pausing, but do not spin the camera while
-     * strafing. Otherwise camera-relative controls create feedback loops. */
-    if (self->cameraIdleFrames > 15) {
-        self->cameraYaw = CameraApproachYaw(self->cameraYaw, self->playerYaw, 0.055f);
+    if (self->orbitHoldFrames > 0) self->orbitHoldFrames--;
+    /* Follow Red's facing while moving without changing the heading used
+     * for a held stick gesture. Manual camera or Z-lock suspends auto-follow. */
+    if (self->orbitHoldFrames == 0 && self->movementActive) {
+        self->cameraYaw = CameraApproachYaw(self->cameraYaw, self->playerYaw, 0.025f);
+    } else if (self->orbitHoldFrames == 0 && self->cameraIdleFrames > 30) {
+        self->cameraYaw = CameraApproachYaw(self->cameraYaw, self->playerYaw, 0.018f);
     }
+
     yaw = self->cameraYaw;
     sine = Math_SinF(yaw);
     cosine = Math_CosF(yaw);
-    distance = CameraFreeDistance(px, pz, yaw);
-    desiredX = px - sine * distance;
-    desiredY = 175.0f;
-    desiredZ = pz + cosine * distance;
-
     if (!self->cameraReady) {
-        self->cameraX = desiredX;
-        self->cameraY = desiredY;
-        self->cameraZ = desiredZ;
+        self->cameraFocusX = px;
+        self->cameraFocusZ = pz;
+        self->cameraDistance = FIELD_CAMERA_DISTANCE;
         self->cameraReady = 1;
     } else {
-        self->cameraX = CameraApproach(self->cameraX, desiredX, 0.18f);
-        self->cameraY = CameraApproach(self->cameraY, desiredY, 0.14f);
-        self->cameraZ = CameraApproach(self->cameraZ, desiredZ, 0.18f);
+        self->cameraFocusX = CameraApproach(self->cameraFocusX, px, 0.36f);
+        self->cameraFocusZ = CameraApproach(self->cameraFocusZ, pz, 0.36f);
     }
-    eye->x = self->cameraX;
-    eye->y = self->cameraY;
-    eye->z = self->cameraZ;
-    /* Look over Red's shoulder and ahead along the route. */
-    at->x = px + sine * 100.0f;
-    at->y = 73.0f;
-    at->z = pz - cosine * 100.0f;
+
+    freeDistance = CameraFreeDistance(self->cameraFocusX, self->cameraFocusZ, yaw);
+    /* Pull in promptly to prevent clipping; slide back out gently, without
+     * the abrupt 35-unit zoom pops of the old wall-avoidance algorithm. */
+    if (freeDistance < self->cameraDistance)
+        self->cameraDistance = freeDistance;
+    else
+        self->cameraDistance = CameraApproach(self->cameraDistance, freeDistance, 0.08f);
+
+    eye->x = self->cameraFocusX - sine * self->cameraDistance;
+    eye->y = 180.0f;
+    eye->z = self->cameraFocusZ + cosine * self->cameraDistance;
+    at->x = self->cameraFocusX + sine * 50.0f;
+    at->y = 60.0f;
+    at->z = self->cameraFocusZ - cosine * 50.0f;
 }
 
 /* Stadium-like battle broadcast camera. Characters and attack animations are
@@ -547,6 +595,9 @@ static void Poke_Main(GameState* state) {
             self->playerYaw = 0.0f;
             self->cameraReady = 0;
             self->cameraIdleFrames = 0;
+            self->movementActive = 0;
+            self->orbitHoldFrames = 0;
+            self->movementBasisYaw = 0.0f;
             self->wasInBattle = 0;
             self->battleFrames = 0;
             self->battleActionFrames = 0;
