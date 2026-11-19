@@ -120,6 +120,21 @@ void PokeOot_Update(PlayState* play) {
     f32 travelled;
 
     if (player == NULL || !sPokeOot.initialized) return;
+    if (sPokeOot.modelFrame < 0x7FFFFFFFU) sPokeOot.modelFrame++;
+    else sPokeOot.modelFrame = 0;
+    if (sPokeOot.attackFramesRemaining) sPokeOot.attackFramesRemaining--;
+
+    if (PokeOot_BattleActive()) {
+        u16 battleKeys = PokeOot_BattleInput(input);
+        poke_update(&sPokeOot.game, battleKeys);
+        if (sPokeOot.game.turns != sPokeOot.previousTurns) {
+            sPokeOot.previousTurns = sPokeOot.game.turns;
+            sPokeOot.attackFramesRemaining = 24;
+            sPokeOot.modelFrame = 0;
+        }
+        if (!PokeOot_BattleActive()) PokeOot_ExitBattle(play);
+        return;
+    }
     position = player->actor.world.pos;
     if (!sPokeOot.havePrevious || sPokeOot.lastScene != play->sceneId) {
         sPokeOot.previous = position;
@@ -148,10 +163,14 @@ void PokeOot_Update(PlayState* play) {
      * Do not steal OoT's movement, Z-target or camera updates. */
     held = input->cur.button;
     pressed = input->press.button;
-    if (sPokeOot.modelFrame < 0x7FFFFFFFU) sPokeOot.modelFrame++;
-    else sPokeOot.modelFrame = 0;
-    if (sPokeOot.attackFramesRemaining) sPokeOot.attackFramesRemaining--;
-    /* Local model smoke test, separate from the eventual battle state. */
+    /* Optional field preview, separate from the turn-based encounter. */
+    if ((held & (BTN_L | BTN_R)) == (BTN_L | BTN_R) &&
+        (pressed & BTN_B) && PokeStadium_AssetAvailable() &&
+        sPokeOot.game.party_count &&
+        sPokeOot.game.party[sPokeOot.game.active].species == POKE_BULBASAUR) {
+        PokeOot_EnterBattle(play, player);
+        return;
+    }
     if ((held & (BTN_L | BTN_R)) == (BTN_L | BTN_R) &&
         (pressed & BTN_A) && PokeStadium_AssetAvailable()) {
         sPokeOot.attackFramesRemaining = 24;
