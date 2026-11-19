@@ -66,6 +66,24 @@ class PalletTownTests(unittest.TestCase):
         self.assertNotIn("spot04_room_1", scene+room)
         self.assertNotIn("spot04_scenePathList", scene+room)
 
+    def test_legacy_room_dma_slots_are_minimal_self_contained_rooms(self):
+        for index in (1, 2):
+            source = pallet_town.unused_room_source(index)
+            self.assertIn(f"gPalletEmptyRoom{index}Header", source)
+            self.assertIn("SCENE_CMD_ROOM_SHAPE", source)
+            self.assertIn("SCENE_CMD_END()", source)
+            self.assertIn("ROOM_SHAPE_TYPE_NORMAL, 0, NULL, NULL", source)
+            self.assertNotIn("spot04_scene_", source)
+        with self.assertRaises(ValueError):
+            pallet_town.unused_room_source(0)
+
+    def test_unreachable_kokiri_cutscene_link_symbols_use_empty_scripts(self):
+        scene, _, _ = pallet_town.build()
+        for symbol in ("gKokiriForestDekuSproutPart3Cs",
+                       "gKokiriForestSariaGreetingCs"):
+            self.assertIn(f"CutsceneData {symbol}[]", scene)
+        self.assertEqual(scene.count("CS_HEADER(0, 1), CS_END_OF_SCRIPT()"), 2)
+
     def test_deterministic_generation(self):
         a=pallet_town.build()
         b=pallet_town.build()
