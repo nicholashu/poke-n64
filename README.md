@@ -2,37 +2,52 @@
 
 A native Nintendo 64 RPG project built on pinned [HackerOoT](https://github.com/HackerN64/HackerOoT), with a five-area opening and an existing optional private Stadium model pipeline.
 
-## ROM-driven Pallet Town
+## ROM-driven Red/Blue opening (work in progress)
 
-This branch, **`feat/pallet-rom-converter`**, adds a Python converter that reads a user-supplied English **Pokémon Red or Blue** ROM and generates the outdoor Pallet Town scene for the existing N64 engine. It includes the latest committed bedroom-to-rival opening from `feat/pallet-town-native-scene`. The imported exterior is selected through its own build command; the ordinary opening remains available.
+Branch **`feat/pallet-rom-converter`** extends the existing five-area opening
+with data imported from an **unmodified user-supplied English Pokémon Red or Blue
+ROM**. It does not bundle a GB ROM, text, graphics or proprietary Pokémon data.
 
 ```sh
-# Extract the map, dialogue and events; generate native assets and a map preview.
+# Extract Pallet and opening-area content into private, inspectable assets.
 make import-pallet POKEMON_ROM="/absolute/path/Pokemon Red.gb"
 
-# Build a separate N64 ROM with your existing OoT/Stadium setup.
+# Build a separate native N64 ROM with the existing OoT/Stadium setup.
 make rom-pallet-docker \
   ROM="/absolute/path/Ocarina of Time US 1.2.z64" \
   POKEMON_ROM="/absolute/path/Pokemon Red.gb"
+
+# Launch the imported build, not the authored baseline.
+make play-pallet
 ```
 
-The first command produces `build/gen1/pallet/`: an inspectable JSON extraction, a coverage report, a grid preview, native scene/collision/data C files, and a hash manifest. The second builds **`build/poke-n64-pallet.z64`** with a separate engine build directory. Your existing `poke-n64-oot.z64` workflow and private Stadium assets remain available.
+This creates **`build/poke-n64-pallet.z64`**, leaving the authored
+`build/poke-n64-oot.z64` unchanged. The imported build still starts in Red's
+bedroom, uses the OoT camera, and can use the existing private Stadium assets.
 
-| Imported content | Behavior in this branch |
+| Aspect | Source in import mode |
 | --- | --- |
-| Block layout and collision whitelist | Actual 20 × 18 walking grid, translated into 3D terrain and blocking walls |
-| Buildings and doors | Original procedural building meshes placed from tile components and extracted warp coordinates |
-| NPCs, signs and dialogue | Extracted placements and text; A interacts with the cell the player faces |
-| Oak at the north exit | Explicit known-version adapter: greeting, appearance, approach, warning and a collision-aware escort |
-| House/lab/route destinations | Extracted and reported; entering an unimplemented destination shows a boundary message |
+| Pallet Town geometry and static collision | ROM tile/block/collision data; original low-poly 3D art rules |
+| Four interior map grids and collision | ROM map blocks/tilesets; original interior 3D furniture/art remains interpreted |
+| Warps, NPCs, signs, initial visibility | ROM records for all five maps |
+| Opening dialogue | Original text decoded locally from ROM for named house, lab, Oak, starter and rival passages, with pagination |
+| Pokémon base stats, initial moves, move power/type/accuracy/PP | ROM data for the five species and nine moves currently supported by the N64 battle runtime |
+| Story events and battle rules | **Source-informed adapters and simplified N64 battle interpreter**, not the Game Boy executable |
 
-The outdoor spawn is just outside Red's house. Analog movement uses the native OoT player; the D-pad provides cardinal movement. Imported mode uses original NPC proxy meshes and paginated text. It does not run the prototype's debug starter shortcuts. Oak's escort ends at the lab entrance; **it never marks the lab entered or starts an unimplemented indoor event**.
+**Not a full Gen 1 translation yet.** The import does not emulate arbitrary
+Game Boy assembly, import all text ASM/effects, implement the full Gen 1 battle
+engine, later learned moves, music, wandering AI or save persistence. Some
+special interactions are intentionally unavailable rather than substituting
+authored story text. Exact event timing and source-backed interior furniture
+remain incomplete.
 
-**Verification boundary:** format and address bindings are checked against pinned `pret/pokered` sources. Tests use invented ROM-shaped bytes, not bundled game content. Host tests, sanitizer checks, and native object compilation are separate from running a real supplied ROM. **No actual Red/Blue extraction, linked imported ROM, emulator playthrough, or hardware run has been verified in this workspace.**
+**Verification:** synthetic ROM tests and native MIPS build checks exercise the
+pipeline. **No actual retail Red/Blue input, linked imported ROM, ParaLLEl
+playthrough or hardware run has been verified in this workspace.** The PR
+remains a draft until these are tested.
 
-Yellow, arbitrary ROM hacks, indoor scenes, starter selection, rival battles, background NPC wandering, music and SRAM persistence are outside this importer slice. This is an explicit adapter for known Pallet behavior, not a general Game Boy assembly translator. The original escort movement data is extracted for inspection; the N64 runtime currently uses a collision-aware 3D route.
-
-See [Pallet ROM converter](docs/PALLET_ROM_CONVERTER.md) for supported hashes, source bindings, generated files, architecture and verification commands. The following sections describe the authored opening and its existing commands.
+See [ROM converter internals](docs/PALLET_ROM_CONVERTER.md) for supported ROM
+hashes, generated files, current coverage, assumptions and live verification.
 
 ## Build and play the authored opening
 
