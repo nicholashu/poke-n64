@@ -27,7 +27,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_pallet_smoke_scenario_is_valid(self):
         scenario = e2e.validate_scenario(self.example)
-        self.assertEqual(len(scenario["steps"]), 12)
+        self.assertEqual(len(scenario["steps"]), 14)
         self.assertEqual(scenario["steps"][-1]["action"], "assert_status")
 
     def test_rejects_unknown_steps(self):
@@ -41,6 +41,14 @@ class ScenarioTests(unittest.TestCase):
         ]}
         with self.assertRaisesRegex(ValueError, "both screenshots must exist"):
             e2e.validate_scenario(scenario)
+
+    def test_movement_checks_require_prior_three_screenshots(self):
+        with self.assertRaisesRegex(ValueError, "three screenshots"):
+            e2e.validate_scenario({"name": "bad", "steps": [
+                {"action": "screenshot", "name": "before"},
+                {"action": "assert_movement", "idle_before": "missing",
+                 "before": "before", "after": "missing"},
+            ]})
 
     def test_rejects_traversal_in_screenshot_name(self):
         with self.assertRaisesRegex(ValueError, "unique and safe"):
@@ -149,6 +157,36 @@ class NetworkTests(unittest.TestCase):
 
 
 class VisualTests(unittest.TestCase):
+    def test_movement_assertion_uses_idle_drift_as_baseline(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow is optional at runtime")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            a, b, c = (root / f"{label}.png" for label in ("idle1", "idle2", "walk"))
+            Image.new("RGB", (50, 50), (40, 40, 40)).save(a)
+            Image.new("RGB", (50, 50), (43, 43, 43)).save(b)
+            Image.new("RGB", (50, 50), (120, 60, 20)).save(c)
+            runner = e2e.Runner({"name": "fake", "steps": [
+                {"action": "screenshot", "name": "placeholder"},
+            ]}, root / "rom.z64", root)
+            runner.images = {"idle1": a, "idle2": b, "walk": c}
+            # Use only this assertion, without invoking real RetroArch.
+            runner.remote = object()
+            response = runner.step({
+                "action": "assert_movement", "idle_before": "idle1",
+                "before": "idle2", "after": "walk", "ratio": 2,
+                "min_difference": 8,
+            })
+            self.assertIn("movement confirmed", response)
+            with self.assertRaisesRegex(AssertionError, "No clear movement"):
+                runner.step({
+                    "action": "assert_movement", "idle_before": "idle1",
+                    "before": "idle2", "after": "walk", "ratio": 2,
+                    "min_difference": 240,
+                })
+
     def test_synthetic_image_difference_and_blank_detection(self):
         try:
             from PIL import Image
