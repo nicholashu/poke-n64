@@ -22,7 +22,8 @@ jobs:
 
   n64:
     name: Native MIPS compilation (no ROM)
-    runs-on: ubuntu-latest
+    # Match Dockerfile's release and its available MIPS cross-toolchain packages.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install the cross compiler
