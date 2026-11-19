@@ -60,7 +60,8 @@ def main() -> None:
                    "src/code/poke_pallet_room.c",
                    "src/code/poke_pallet_unused_room_1.c",
                    "src/code/poke_pallet_unused_room_2.c",
-                   "src/code/title_setup.c", "src/code/z_play.c"]
+                   "src/code/title_setup.c", "src/code/z_play.c",
+                   "src/code/z_camera.c"]
     else:
         sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_state.c",
                    "src/code/title_setup.c", "src/code/z_game_dlftbls.c", "src/code/graph.c"]
