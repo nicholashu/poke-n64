@@ -34,3 +34,12 @@ jobs:
         run: python3 tools/check_native.py --require-mips
       - name: Check overlay and ROM input safeguards
         run: python3 tests/test_tools.py
+
+  n64-docker:
+    name: Docker toolchain and native MIPS compilation (no ROM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image and compile six native objects
+        run: make check-native-docker

@@ -144,6 +144,21 @@ class RomTests(unittest.TestCase):
                     build_rom.main()
             installer.assert_not_called()
 
+    def test_missing_native_tools_fail_before_engine_install_or_rom_copy(self) -> None:
+        self.path.write_bytes(self.canonical)
+        engine = Path(self.temp.name) / "engine"
+        with patch.object(build_rom, "native_make", side_effect=RuntimeError("Run make rom-docker")), \
+             patch.object(build_rom, "install") as installer, \
+             patch.object(build_rom.subprocess, "run") as run, \
+             patch.object(sys, "argv", ["build_rom.py", "--rom", str(self.path), "--engine", str(engine)]), \
+             contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "make rom-docker"):
+                build_rom.main()
+        installer.assert_not_called()
+        run.assert_not_called()
+        self.assertFalse(engine.exists())
+        self.assertEqual(self.canonical, self.path.read_bytes())
+
     def test_auto_detection_uses_contents_with_mixed_games_and_spaces(self) -> None:
         directory = Path(self.temp.name) / "roms"
         directory.mkdir()
@@ -190,12 +205,14 @@ class RomTests(unittest.TestCase):
     def test_check_only_does_not_install_build_or_write(self) -> None:
         self.path.write_bytes(self.canonical)
         with patch.object(build_rom, "install") as installer, \
+             patch.object(build_rom, "native_make", side_effect=RuntimeError("no compiler")) as preflight, \
              patch.object(build_rom.subprocess, "run") as run, \
              patch.dict(os.environ, {"POKE_N64_ROM": ""}), \
              patch.object(sys, "argv", ["build_rom.py", "--roms-dir", self.temp.name, "--check"]), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             build_rom.main()
         installer.assert_not_called()
+        preflight.assert_not_called()
         run.assert_not_called()
         self.assertIn("Validated OoT US NTSC 1.2", output.getvalue())
         self.assertEqual([self.path], list(Path(self.temp.name).iterdir()))

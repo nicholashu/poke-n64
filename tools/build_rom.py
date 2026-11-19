@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 from bootstrap import DEFAULT_ENGINE, LOCK, ROOT, install
+from build_env import native_make
 
 
 def normalized_rom(path: Path) -> bytes:
@@ -94,17 +95,16 @@ def main() -> None:
     path, data = select_rom(args.rom, args.roms_dir)
     print(f"Validated OoT US NTSC 1.2: {path}\nNormalized MD5: {LOCK['base_rom_md5']}", flush=True)
     if args.check:
-        print("Input is ready. Run make rom to build the native target.")
+        print("Input is ready. Run make rom-docker, or make rom with a native MIPS toolchain.")
         return
+    # Report missing native tools before downloading the engine or copying a ROM.
+    make = native_make()
     engine = args.engine.resolve()
     install(engine)
     base = engine / "baseroms/ntsc-1.2/baserom.z64"
     if base.exists() and base.read_bytes() != data:
         raise RuntimeError(f"Refusing to overwrite an existing different base ROM at {base}")
     base.write_bytes(data)
-    make = shutil.which("gmake") or shutil.which("make")
-    if not make:
-        raise RuntimeError("GNU make is required (Homebrew gmake on macOS).")
     jobs = max(1, args.jobs)
     common = [make, f"-j{jobs}", f"N_THREADS={jobs}", "VERSION=ntsc-1.2", "REGION=US", "DEBUG_FEATURES=0"]
     subprocess.run([*common, "setup"], cwd=engine, check=True)

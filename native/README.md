@@ -29,10 +29,15 @@ asset is checked into this repository.
 ## Engine overlay
 
 `upstream.json` pins HackerOoT to one exact commit and one supported base ROM.
-`tools/bootstrap.py` creates an isolated checkout under `build/engine`, checks its
-commit, validates exact source anchors, and installs the project sources. It adds
-the game state to the state table, both table-consuming implementation files,
-the boot transition and the resident code segment in `spec/spec`.
+`tools/bootstrap.py` creates an isolated checkout under `build/engine` for native
+builds. The Docker wrappers pass `--engine /project/build/docker-engine`, which
+corresponds to `build/docker-engine` on the host. These checkouts stay separate so
+Linux builds do not reuse macOS tools, objects or Python environments.
+
+The installer checks the pinned commit, validates exact source anchors, and
+installs the project sources. It adds the game state to the state table, both
+table-consuming implementation files, the boot transition and the resident code
+segment in `spec/spec`.
 
 The installer refuses unknown edits and records hashes of installed files so
 rerunning it can safely refresh our own changes. It does not reset or clean an
@@ -62,18 +67,83 @@ slot remains current. This preserves a valid prior save if a write is interrupte
 The implementation needs emulator and real cartridge testing before persistence
 can be considered verified; a successful compile alone does not establish that.
 
-## Build verification boundaries
+## Build and verify
+
+### Docker toolchain
+
+On macOS, install and open Docker Desktop, and wait until its engine is running.
+Use the Apple Silicon installer on Apple Silicon. The wrapper chooses
+`linux/amd64` for both image creation and execution to support the upstream build
+tools. Docker Engine on Linux is also supported. The host needs Python 3 and
+`make`; the container supplies GNU Make and the MIPS cross toolchain.
+
+Run from the repository root:
+
+```sh
+# Build the toolchain image and compile six real MIPS objects; no ROM is needed.
+make check-native-docker
+
+# Build the game using the checksum-matching OoT image in roms/.
+make rom-docker
+
+# Or select a local image explicitly, including a path outside the project.
+make rom-docker ROM="/absolute/path/with spaces/oot-ntsc-1.2.z64"
+```
+
+`roms/` discovery and explicit `ROM=` inputs use the same size, byte-order and
+checksum validation as `make check-rom` and `make rom`. The full Docker build
+validates its input before image downloads or build writes. A Pokémon Stadium
+image is not an input to this slice.
+
+The image build uses the minimal `tools/docker-context` directory and the root
+`Dockerfile`; no project source or ROM bytes are included in that context.
+Runtime mounts make the project available at `/project`, the selected image
+read-only at `/inputs/base.z64`, and `roms/` read-only when it exists. Generated
+engine files remain in `build/docker-engine`. The final outputs are unchanged:
+
+```text
+build/poke-n64.z64
+build/poke-n64.bps
+```
+
+### Native host toolchain
+
+`make rom` uses `build/engine` and requires GNU Make 4 or newer plus a complete
+supported big-endian MIPS GCC/binutils toolchain on `PATH`. Its `gcc`, `as`, `ld`,
+`objcopy`, `objdump`, `nm` and `strip` must share a supported prefix such as
+`mips-linux-gnu-`. `tools/build_env.py` checks the prerequisites and follows the
+pinned engine's toolchain selection order before engine installation or ROM
+copying. The other upstream build dependencies are still required.
+
+macOS's bundled Make is insufficient for the upstream engine. Homebrew's `make`
+package supplies `gmake`, which the helper detects, but does not provide a MIPS
+cross compiler. Use `make rom-docker` if the native toolchain is unavailable.
+
+### Verification boundaries
 
 `tools/check_native.py --require-mips` compiles the project, boot route, state
 table and graphics dispatch with the pinned engine's actual headers into
-big-endian VR4300 objects. It requires an installed MIPS GCC or `MIPS_CC`. Without
-that compiler, the default command explicitly falls back to a 32-bit host syntax
-check. No mocked engine header is used in either mode.
+six big-endian VR4300 objects. It requires an installed MIPS GCC or `MIPS_CC`.
+Without that compiler, `make check-native` explicitly falls back to a 32-bit host
+syntax check. `MIPS_CC` applies to this checker, not to the full upstream ROM
+build. No mocked engine header is used in either mode.
+
+`make check-native-docker` runs the build preflight and requires real MIPS object
+compilation inside the actual image. It also dry-runs the engine's `venv` Make
+target to exercise the upstream Makefile and its toolchain detection without
+installing that environment. A dedicated Ubuntu 24.04 CI job runs this command
+without a ROM. These checks do not extract game assets, link a complete ROM or
+run the game.
 
 `tools/build_rom.py --rom /path/to/oot-ntsc-1.2.z64` validates the user's base ROM,
 normalizes supported byte orders, extracts assets locally, links and compresses
 the ROM, and writes a BPS patch. This step needs the original OoT US NTSC 1.2 ROM
 and upstream build dependencies. It is intentionally not faked in CI.
+
+The native sources and boot hooks have passed actual MIPS object compilation.
+**A complete ROM has not yet been linked or tested in an emulator or on hardware
+for this project.** The Docker check adds a reproducible toolchain check; it does
+not establish those later results.
 
 The runtime uses F3DEX3. Test with an LLE-capable emulator such as ares or ParaLLEl
 and 8 MiB RAM, then on original N64 hardware. Building a `.z64`, emulator booting,

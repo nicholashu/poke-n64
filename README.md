@@ -81,23 +81,29 @@ make check-rom
 
 This checks the image size, byte order and checksum without downloading tools, building or modifying any files. The builder selects the matching **OoT US NTSC 1.2** image by contents. Other images, including Pokémon Stadium, are skipped. A filename containing `USA (Rev 2)` is a useful label but is not a substitute for this validation.
 
-With the native toolchain installed, `make rom` then builds from that folder. You can still choose an explicit input with `make rom ROM="/path/with spaces/oot.z64"`. Stadium is not used by the current build; keep it for the later model-import work.
+`make rom-docker` builds from that folder using the supplied Linux toolchain. You can also select an explicit input with `make rom-docker ROM="/path/with spaces/oot.z64"`. The same selection works with the native `make rom` command. Stadium is not used by the current build; keep it for the later model-import work.
 
-### Container build
+### Docker build (recommended on macOS)
 
-The Dockerfile supplies the Linux cross compiler and native tool dependencies. On Apple Silicon, use the `linux/amd64` platform for the upstream build tools.
+Install [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/), open it, and wait until its engine is running. On Apple Silicon, use Docker Desktop's Apple Silicon installer. The wrapper runs the build as **`linux/amd64`** for compatibility with the upstream tools, including on an Apple Silicon Mac. Docker Engine on Linux also works.
+
+Run these commands from the project root with Python 3 and `make` available:
 
 ```sh
-docker build --platform linux/amd64 -t poke-n64-build .
-docker run --rm --platform linux/amd64 \
-  -v "$PWD:/project" \
-  -v "$PWD/roms:/project/roms:ro" \
-  poke-n64-build make rom
+# Use the supported OoT image from roms/:
+make rom-docker
+
+# Or select an image elsewhere on your computer:
+make rom-docker ROM="/absolute/path/with spaces/oot-ntsc-1.2.z64"
 ```
 
-Run these commands from the project root after creating `roms/`. The second mount makes the input folder read-only inside the build container. Initial setup needs network access to fetch the pinned engine and build dependencies.
+The wrapper validates the ROM before downloading or building anything, checks that Docker is running, builds the toolchain image and runs the build. You do not need a MIPS compiler or GNU Make 4 installed on the host for this command. Initial setup needs network access to fetch the image, pinned engine and build dependencies.
 
-The expected outputs are:
+Docker receives only the minimal `tools/docker-context` directory as its image build context; repository source and ROM bytes are not sent to the image builder. At runtime, the project is mounted locally at `/project`, the selected ROM is mounted read-only at `/inputs/base.z64`, and `roms/` is also mounted read-only when present. An explicit ROM path outside the project works the same way.
+
+The Docker build maintains its engine checkout, Linux tools and extracted assets in **`build/docker-engine`**. Native builds use **`build/engine`**. Keeping those directories separate prevents a container from reusing macOS executables or a host Python environment. Keep authored changes in this repository, outside either generated engine checkout.
+
+Both build methods write the same outputs:
 
 ```text
 build/poke-n64.z64
@@ -106,9 +112,11 @@ build/poke-n64.bps
 
 **This full build path is implemented but has not been exercised with a base ROM in this repository's initial delivery.** A successful object compile does not prove the final ROM links, boots or saves correctly on a console. The build exits with an error for a missing or wrong-version input; CI does not treat that as a successful ROM build.
 
-### Existing Linux toolchain
+### Native build without Docker
 
-With the cross compiler and [HackerOoT's prerequisites](https://github.com/HackerN64/HackerOoT/blob/5fac42fa11278810ce9ca5b85d5d40b4136b5f57/INSTALLATION.md) installed:
+`make rom` requires **GNU Make 4 or newer**, a complete supported **big-endian MIPS GCC/binutils toolchain** on `PATH`, and [HackerOoT's other prerequisites](https://github.com/HackerN64/HackerOoT/blob/5fac42fa11278810ce9ca5b85d5d40b4136b5f57/INSTALLATION.md). The compiler, assembler, linker, `objcopy`, `objdump`, `nm` and `strip` must use the same supported prefix, such as `mips-linux-gnu-`. The builder checks these prerequisites before installing the engine or copying a ROM.
+
+macOS's bundled Make is too old for the upstream build. `brew install make` supplies `gmake`, which the helper detects, but a complete MIPS cross toolchain is still required. Xcode Command Line Tools alone are sufficient for the development console, not for building the N64 ROM.
 
 ```sh
 make rom
@@ -116,7 +124,7 @@ make rom
 make rom ROM="/absolute/path/to/oot-ntsc-1.2.z64"
 ```
 
-The helper installs the project overlay into `build/engine`, validates the base image, runs engine setup/build/compression and produces a BPS patch. It rejects unexpected edits in files it manages instead of resetting your checkout. Keep authored changes in this repository, outside `build/engine`.
+The helper validates the base image, checks the host toolchain, installs the project overlay into `build/engine`, then runs engine setup/build/compression and produces a BPS patch. It rejects unexpected edits in files it manages instead of resetting your checkout.
 
 ### N64 controls
 
@@ -134,12 +142,14 @@ The native state loads a valid save at boot. Saving is explicit. A forced replac
 ```sh
 make test
 make sanitize
-make check-native
+make check-native-docker
 ```
 
 `make test` exercises gameplay, saves and a complete input-driven console journey. `make sanitize` repeats the C tests with AddressSanitizer and UndefinedBehaviorSanitizer.
 
-`make check-native` bootstraps the pinned engine and compiles the shared core, serializer, native state, setup hook, game-state table and dispatcher against the real engine headers. With no MIPS compiler it reports a weaker 32-bit host syntax check. To require actual target objects:
+**`make check-native-docker` needs no ROM.** With Docker running, it builds the actual toolchain image, checks GNU Make and the MIPS toolchain inside the container, and compiles six big-endian VR4300/MIPS objects against the pinned engine headers: the shared core, serializer, native state, setup hook, game-state table and dispatcher. It also dry-runs the engine's `venv` Make target to check the upstream Makefile and its toolchain detection. It uses `build/docker-engine`, the same isolated checkout as `make rom-docker`. This checks the container and native integration without linking or running a game image.
+
+For a host toolchain, `make check-native` uses `build/engine` and checks the same six sources. With no MIPS compiler it reports a weaker 32-bit host syntax check. To require actual target objects:
 
 ```sh
 python3 tools/check_native.py --require-mips
@@ -147,7 +157,7 @@ python3 tools/check_native.py --require-mips
 MIPS_CC=/path/to/mips-linux-gnu-gcc python3 tools/check_native.py --require-mips
 ```
 
-CI requires MIPS compilation and does not need or handle a ROM. Nothing under `build/` is committed.
+`MIPS_CC` selects a compiler for the object checker only; it does not configure the full upstream ROM build. CI includes direct MIPS compilation and a separate Ubuntu 24.04 job running `make check-native-docker`. Neither requires a ROM. Nothing under `build/` is committed.
 
 ## Architecture
 
@@ -162,6 +172,9 @@ CI requires MIPS compilation and does not need or handle a ROM. Nothing under `b
 | `tools/bootstrap.py` | Safe, repeatable engine overlay installation |
 | `tools/check_native.py` | Real-header/native object compilation without game assets |
 | `tools/build_rom.py` | Base validation, ROM build and patch packaging |
+| `tools/build_env.py` | Native GNU Make and matching MIPS toolchain preflight |
+| `tools/docker_rom.py` | Docker availability, isolated Linux build and ROM-free container check |
+| `Dockerfile`, `tools/docker-context/` | Ubuntu toolchain image and minimal image build context |
 | `host/` | Console frontend and full command-driven journey test |
 | `tests/` | Gameplay, persistence and build-tool regression checks |
 | `assets/manifest.json` | Documented species/model slots for later asset conversion |
