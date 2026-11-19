@@ -32,9 +32,63 @@ typedef struct {
     u8 havePrevious;
     u32 modelFrame;
     u8 attackFramesRemaining;
+    s16 battleCameraId;
+    Vec3f battleAnchor;
+    u16 previousTurns;
 } PokeOotRuntime;
 
 static PokeOotRuntime sPokeOot;
+
+s32 PokeOot_BattleActive(void) {
+    return sPokeOot.initialized && poke_in_battle(&sPokeOot.game);
+}
+
+static u16 PokeOot_BattleInput(const Input* input) {
+    u16 b = input->cur.button;
+    u16 keys = 0;
+    if (b & BTN_A) keys |= KEY_A;
+    if (b & BTN_B) keys |= KEY_B;
+    if (b & BTN_DUP || input->cur.stick_y > 24) keys |= KEY_UP;
+    if (b & BTN_DDOWN || input->cur.stick_y < -24) keys |= KEY_DOWN;
+    return keys;
+}
+
+/* Only Pokémon turn rules run while OoT's world update is suspended.
+ * Battle camera is a real OoT sub-camera, not a simulated tracking camera.
+ */
+static void PokeOot_EnterBattle(PlayState* play, Player* player) {
+    Vec3f at, eye;
+    s16 id;
+    if (poke_start_encounter(&sPokeOot.game, POKE_RATTATA, 4) != POKE_OK)
+        return;
+    sPokeOot.battleAnchor = player->actor.world.pos;
+    sPokeOot.previousTurns = sPokeOot.game.turns;
+    sPokeOot.attackFramesRemaining = 0;
+    sPokeOot.modelFrame = 0;
+    id = Play_CreateSubCamera(play);
+    sPokeOot.battleCameraId = id;
+    if (id != CAM_ID_NONE) {
+        at.x = sPokeOot.battleAnchor.x;
+        at.y = sPokeOot.battleAnchor.y + 65.0f;
+        at.z = sPokeOot.battleAnchor.z + 70.0f;
+        eye.x = sPokeOot.battleAnchor.x + 235.0f;
+        eye.y = sPokeOot.battleAnchor.y + 165.0f;
+        eye.z = sPokeOot.battleAnchor.z + 385.0f;
+        Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
+        Play_ChangeCameraStatus(play, id, CAM_STAT_ACTIVE);
+        Play_SetCameraAtEye(play, id, &at, &eye);
+    }
+    sPokeOot.game.previous_keys = KEY_B;
+}
+
+static void PokeOot_ExitBattle(PlayState* play) {
+    if (sPokeOot.battleCameraId != CAM_ID_NONE) {
+        Play_ReturnToMainCam(play, sPokeOot.battleCameraId, 0);
+        sPokeOot.battleCameraId = CAM_ID_NONE;
+    }
+    sPokeOot.attackFramesRemaining = 0;
+}
+
 
 static f32 PokeOot_Abs(f32 value) {
     return value < 0.0f ? -value : value;
@@ -49,6 +103,7 @@ void PokeOot_OnSceneEnter(PlayState* play) {
     /* OoT's actor position may have teleported between scene loads. */
     sPokeOot.havePrevious = 0;
     sPokeOot.lastScene = play->sceneId;
+    sPokeOot.battleCameraId = CAM_ID_NONE;
 }
 
 /* The OoT player actor, not poke_walk(), owns overworld movement and walls.
