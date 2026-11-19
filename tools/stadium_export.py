@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -470,10 +471,14 @@ def save_export(model: dict, directory: Path, target_height: float, rom: dict | 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--rom", type=Path, help="User-supplied Stadium 1 ROM")
+    env_rom = os.environ.get("STADIUM_ROM")
+    group.add_argument("--rom", type=Path, default=Path(env_rom) if env_rom else None,
+                       help="User-supplied Stadium 1 ROM, or STADIUM_ROM environment variable")
     group.add_argument("--pack", type=Path, help="Previously extracted DSM3/PVDZ pack")
     parser.add_argument("--roms-dir", type=Path, default=ROOT / "roms")
-    parser.add_argument("--species", type=int, default=1, help="National Pokédex number 1-151")
+    parser.add_argument("--species", type=int,
+                        default=int(os.environ.get("STADIUM_SPECIES", "1")),
+                        help="National Pokédex number 1-151 (or STADIUM_SPECIES)")
     parser.add_argument("--output", type=Path, default=OUT_ROOT)
     parser.add_argument("--height", type=float, default=1.5, help="Blender model height in scene units")
     parser.add_argument("--inspect-only", action="store_true",
