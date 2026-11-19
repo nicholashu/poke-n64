@@ -87,6 +87,44 @@ The default save is `poke-n64.sav` in the working directory. A valid save loads 
 make play ARGS="--seed 1 --save adventure.sav --no-clear"
 ```
 
+## Clean ParaLLEl N64 launch (recommended for every test)
+
+**Always use `make play-oot` instead of reopening the ROM directly in RetroArch.**
+The emulator can otherwise reuse cartridge SRAM or a savestate left by an
+earlier, incompatible build. `tools/play_oot.py` creates a unique, empty
+savefile directory and savestate directory for **every** launch, without
+deleting or restoring any of your existing save files.
+
+```sh
+# Launch the existing OoT conversion ROM with fresh game state:
+make play-oot
+
+# Rebuild and then launch, also with fresh game state:
+make rom-oot-play
+
+# Inspect exactly which CLI and settings would be used, without starting:
+python3 tools/play_oot.py --dry-run
+```
+
+This uses the installed **ParaLLEl N64 (Parallel Launcher Edition)** core,
+the launcher's normal graphics/input configuration, and the
+`--no-patch` flag. A temporary `--appendconfig` override enforces:
+
+- Empty, unique `savefile_directory` and `savestate_directory`
+- `savestate_auto_load=false` and `savestate_auto_save=false`
+- Video shader/filter disabled for clean testing, while retaining Vulkan
+  and the F3DEX3-capable core configuration
+- `config_save_on_exit=false`, so test launches do not rewrite your normal
+  RetroArch settings
+
+Test sessions stay in Git-ignored `build/emulator-sessions/` for optional
+debugging. They are **never reused**. Existing `.srm` saves and old state
+files remain untouched elsewhere. If that ROM is already running, the script
+refuses to launch a second instance until it is closed.
+
+**This applies to `make play-oot` / `make rom-oot-play`**, not arbitrary
+launches made manually through the RetroArch GUI.
+
 ## Build the native N64 target
 
 ### Native Pallet Town scene (experimental)
