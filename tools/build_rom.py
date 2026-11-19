@@ -86,6 +86,8 @@ def main() -> None:
                         help="explicit base ROM; otherwise inspect roms/ by checksum")
     parser.add_argument("--roms-dir", type=Path, default=ROOT / "roms",
                         help="folder to scan when no explicit ROM is supplied")
+    parser.add_argument("--control-boot", action="store_true",
+                        help="build the stock Zelda boot path for diagnosing the custom state")
     parser.add_argument("--check", action="store_true",
                         help="validate local input only; no downloads, builds or writes")
     parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
@@ -100,7 +102,7 @@ def main() -> None:
     # Report missing native tools before downloading the engine or copying a ROM.
     make = native_make()
     engine = args.engine.resolve()
-    install(engine)
+    install(engine, boot_mode="control" if args.control_boot else "poke")
     base = engine / "baseroms/ntsc-1.2/baserom.z64"
     if base.exists() and base.read_bytes() != data:
         raise RuntimeError(f"Refusing to overwrite an existing different base ROM at {base}")
@@ -113,10 +115,11 @@ def main() -> None:
     generated = engine / "build/ntsc-1.2/hackeroot-ntsc-1.2-compressed-yaz.z64"
     if not generated.exists():
         raise RuntimeError(f"Build returned success without expected output: {generated}")
-    target = ROOT / "build/poke-n64.z64"
+    label = "poke-n64-control" if args.control_boot else "poke-n64"
+    target = ROOT / f"build/{label}.z64"
     shutil.copyfile(generated, target)
     flips = engine / "tools/Flips/flips"
-    patch = ROOT / "build/poke-n64.bps"
+    patch = ROOT / f"build/{label}.bps"
     if not flips.is_file():
         raise RuntimeError(f"ROM built at {target}, but BPS tool is missing: {flips}")
     subprocess.run([str(flips), "--create", "--bps", str(base), str(target), str(patch)], check=True)
