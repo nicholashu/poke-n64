@@ -87,6 +87,21 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(runtime.count("self->drawBoxes = 0;"), 2)  # Frame and state initialization
         self.assertNotIn("self->drawBoxes = 0;", runtime.split("static void DrawWorld", 1)[1].split("static void Panel", 1)[0])
         self.assertIn("if (v == NULL) return;", runtime)
+        # Native camera uses Zelda-like third-person tracking and has a
+        # separate Stadium presentation. Keep Gen 1 rules/save codec untouched.
+        self.assertIn("static u16 ReadFieldKeys(PokeState* self, const Input* input)", runtime)
+        self.assertIn("static void FieldCamera(PokeState* self, Vec3f* eye, Vec3f* at)", runtime)
+        self.assertIn("static void StadiumCamera(PokeState* self, Vec3f* eye, Vec3f* at)", runtime)
+        self.assertIn("if (self->game.mode == MODE_FIELD) keys = ReadFieldKeys", runtime)
+        self.assertIn("if (held & BTN_Z)", runtime)
+        self.assertIn("if (held & BTN_CLEFT)", runtime)
+        self.assertIn("if (battle) {", runtime)
+        self.assertIn("StadiumCamera(self, &eye, &at);", runtime)
+        self.assertIn("FieldCamera(self, &eye, &at);", runtime)
+        self.assertIn("self->cameraYaw = 0.0f;", runtime)
+        self.assertIn("self->cameraReady = 0;", runtime)
+        self.assertIn("self->wasInBattle = 0;", runtime)
+        self.assertIn("static void PrintShort(", runtime)
 
     def test_control_boot_is_pristine_upstream_with_no_pokemon_overlay(self) -> None:
         original = subprocess.check_output(
