@@ -37,7 +37,8 @@ class OverlayTests(unittest.TestCase):
             "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
             "include/tables/gamestate_table.h": 'DEFINE_GAMESTATE_INTERNAL(Setup, GAMESTATE_SETUP)\n',
-            "spec/spec": '    include "$(BUILD_DIR)/src/code/title_setup.o"\n',
+            "spec/spec": '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
+                         '    include "$(BUILD_DIR)/src/code/z_play.o"\n',
             "src/makerom/rom_header.s": 'ROM_NAME("THE LEGEND OF ZELDA")\nGAME_ID("ZL")\n',
             "include/libc/stdint.h": '#ifndef STDINT_H\n#define STDINT_H\n#endif\n',
             "include/config/config_memory.h": '#define POLY_OPA_BUFFER_SIZE 0x1A00\n#define OVERLAY_BUFFER_SIZE 0x400\n',
