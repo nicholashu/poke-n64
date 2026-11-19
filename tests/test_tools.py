@@ -37,7 +37,9 @@ class OverlayTests(unittest.TestCase):
             "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
             "spec/scenes_n64.inc": '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
-                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"\n',
+                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"\n'
+                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_1.o"\n'
+                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_2.o"\n',
             "include/tables/gamestate_table.h": 'DEFINE_GAMESTATE_INTERNAL(Setup, GAMESTATE_SETUP)\n',
             "spec/spec": '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
                          '    include "$(BUILD_DIR)/src/code/z_play.o"\n'
@@ -175,7 +177,17 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("poke_pallet_room.o", scene_spec)
         self.assertNotIn("spot04/spot04_scene.o", scene_spec)
         self.assertNotIn("spot04/spot04_room_0.o", scene_spec)
-        self.assertIn("SCENE_CMD_COL_HEADER", (self.engine / "src/code/poke_pallet_scene.c").read_text())
+        for room in (1, 2):
+            self.assertIn(f"poke_pallet_unused_room_{room}.o", scene_spec)
+            self.assertNotIn(f"spot04/spot04_room_{room}.o", scene_spec)
+            empty_room = (self.engine / f"src/code/poke_pallet_unused_room_{room}.c").read_text()
+            self.assertIn("SCENE_CMD_ROOM_SHAPE", empty_room)
+            self.assertNotIn("spot04_scene_", empty_room)
+        pallet_scene = (self.engine / "src/code/poke_pallet_scene.c").read_text()
+        self.assertIn("gKokiriForestDekuSproutPart3Cs", pallet_scene)
+        self.assertIn("gKokiriForestSariaGreetingCs", pallet_scene)
+        self.assertIn("CS_END_OF_SCRIPT()", pallet_scene)
+        self.assertIn("SCENE_CMD_COL_HEADER", pallet_scene)
         self.assertIn("SCENE_CMD_ROOM_SHAPE", (self.engine / "src/code/poke_pallet_room.c").read_text())
         self.assertIn("poke_core.o", spec)
         self.assertNotIn("poke_state.o", spec)
