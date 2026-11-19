@@ -50,8 +50,8 @@ class RomIntegrityTests(unittest.TestCase):
         bad = [
             (base[:0x400], "truncated"),
             (b"NOPE" + base[4:], "Not a big-endian"),
-            (base[:8] + b"\\x00" * 4 + base[12:], "Unexpected N64 entrypoint"),
-            (base[:0x40] + b"\\x00" * (0x1000 - 0x40) + base[0x1000:], "IPL3 boot region"),
+            (base[:8] + bytes(4) + base[12:], "Unexpected N64 entrypoint"),
+            (base[:0x40] + bytes(0x1000 - 0x40) + base[0x1000:], "IPL3 boot region"),
         ]
         for rom, message in bad:
             with self.subTest(message=message):
