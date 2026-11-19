@@ -16,6 +16,7 @@
 #include "z_lib.h"
 #include "view.h"
 #include "poke_pallet_native.h"
+#include "poke_pallet_import.h"
 
 typedef struct {
     PokeGame game;
