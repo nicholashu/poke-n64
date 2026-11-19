@@ -461,4 +461,11 @@ def parse_pallet(data: bytes, profile: RomProfile) -> dict[str, Any]:
 
 def extract_pallet(rom: bytes) -> dict[str, Any]:
     """Strict public entry point: recognize a complete ROM, then extract data."""
-    return parse_pallet(rom, identify_rom(rom))
+    profile = identify_rom(rom)
+    world = parse_pallet(rom, profile)
+    # The verified cartridge contains the original dialogue for the entire
+    # opening sequence, not just Pallet's signs. No copyrighted text is stored
+    # in the converter's source tree.
+    from opening_rom import extract_opening_texts
+    world["opening_texts"] = extract_opening_texts(rom, world["texts"])
+    return world

@@ -300,7 +300,10 @@ def make_geometry(data: dict) -> tuple[Geometry, dict]:
 
 def _c_string(value: str) -> str:
     # Ensure ASCII on GfxPrint's limited font, with explicit default name tokens.
-    replacements={"<PLAYER>":"RED","<RIVAL>":"BLUE","{PLAYER}":"RED",
+    replacements={"<PKMN>":"POKEMON","<PK>":"PO","<MN>":"KEMON","<TARGET>":"TARGET",
+                  "<USER>":"USER","‘":"'","’":"'","“":'"',"”":'"',
+                  "…":"...","♂":"M","♀":"F","¥":"Y",
+                  "<PLAYER>":"RED","<RIVAL>":"BLUE","{PLAYER}":"RED",
                   "{RIVAL}":"BLUE","POKé":"POKE","é":"e","É":"E",
                   "’":"'","…":"..."}
     for source,target in replacements.items():
@@ -362,6 +365,18 @@ def native_data_source(world: dict, info: dict) -> str:
             f'    .signs = sSigns, .sign_count = {len(data["signs"])},',
             f'    .connections = sConnections, .connection_count = {len(data["connections"])},',
             '    .texts = sTexts,','};','']
+    if world.get("opening_texts") is not None:
+        from opening_rom import emit_opening_c
+        lines.append(emit_opening_c(world["opening_texts"], _c_string))
+    else:
+        # Synthetic map fixtures exercise geometry only, not ROM text.
+        lines.extend([
+            '#include "poke_intro.h"',
+            'const unsigned gPokeOpeningTextEnabled = 0;',
+            'const char* const gPokeOpeningTalks[TALK_PC_FULL + 1] = { 0 };',
+            'const char* const gPokeOpeningStarters[3] = { 0 };',
+            'const char* const gPokeOpeningResults[2] = { 0 };',
+        ])
     return '\n'.join(lines)
 
 
@@ -398,7 +413,9 @@ def compile_world(world: dict) -> dict:
         "map_blocks":"extracted", "static_collision":"extracted",
         "warps_and_connections":"extracted; connected to existing indoor story where supported",
         "npc_positions_and_visibility":"extracted; background wandering not implemented",
-        "dialogue":"extracted; default player/rival names rendered as RED/BLUE",
+        "dialogue":("all mapped opening speeches extracted from cartridge; "
+                    "unsupported interactions remain unavailable"
+                    if world.get("opening_texts") else "synthetic fixture without opening dialogue"),
         "oak_event":"authored gen1_pallet_oak_v1 adapter; collision-aware 3D escort",
         "assembly_translation":False,"post_lab_events":False,"sram_persistence":False,
         "music":False,"interiors":False,"yellow":False},

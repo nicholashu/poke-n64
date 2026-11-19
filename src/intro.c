@@ -1,6 +1,59 @@
 #include "poke_intro.h"
 #include <string.h>
 
+/* A dialogue page is two 36-column rows. The original GB text controls were
+ * decoded during import. Do not replace missing ROM passages with authored
+ * substitute dialogue in the imported build. */
+static const char* opening_rom_dialogue(const PokeIntro* s) {
+    if (!gPokeOpeningTextEnabled || s->talk == TALK_NONE || s->talk > TALK_PC_FULL)
+        return NULL;
+    if (s->talk == TALK_BALL) {
+        if (s->selection == POKE_BULBASAUR) return gPokeOpeningStarters[0];
+        if (s->selection == POKE_CHARMANDER) return gPokeOpeningStarters[1];
+        if (s->selection == POKE_SQUIRTLE) return gPokeOpeningStarters[2];
+        return NULL;
+    }
+    if (s->talk == TALK_RESULT) {
+        if (s->outcome == BATTLE_WON) return gPokeOpeningResults[0];
+        if (s->outcome == BATTLE_LOST) return gPokeOpeningResults[1];
+        return NULL;
+    }
+    return gPokeOpeningTalks[s->talk];
+}
+
+/* Render or count the same paginated text. A new paragraph and every two
+ * display lines advance a page; source passages are separated by form-feed. */
+static int opening_rom_page(const char* text, unsigned target, char out[2][37]) {
+    unsigned page = 0, row = 0, column = 0, i;
+    out[0][0] = out[1][0] = 0;
+    if (text == NULL) return 0;
+    for (i = 0; i < 4096 && text[i] != 0; ++i) {
+        char ch = text[i];
+        if (ch == '\r') continue;
+        if (ch == '\f') { ++page; row = column = 0; continue; }
+        if (ch == '\n') {
+            ++row; column = 0;
+            if (row >= 2) { ++page; row = 0; }
+            continue;
+        }
+        if (column >= 36) {
+            ++row; column = 0;
+            if (row >= 2) { ++page; row = 0; }
+        }
+        if (page == target) {
+            out[row][column] = ch;
+            out[row][column + 1] = 0;
+        }
+        ++column;
+    }
+    return page > target;
+}
+
+static int opening_rom_more(const PokeIntro* s) {
+    char discarded[2][37];
+    return opening_rom_page(opening_rom_dialogue(s), s->text_page, discarded);
+}
+
 static const uint8_t sEscort[][2] = {
     {10,2}, {10,7}, {9,7}, {9,12}, {12,12}, {12,11}
 };
@@ -60,6 +113,11 @@ static void confirm(PokeIntro* s,PokeGame* g,uint16_t pressed) {
     uint8_t talk=s->talk;
     if (talk==TALK_BALL && (pressed&KEY_B)) { s->talk=TALK_NONE; return; }
     if (!(pressed&KEY_A)) return;
+    if (gPokeOpeningTextEnabled && opening_rom_more(s)) {
+        ++s->text_page;
+        return;
+    }
+    s->text_page = 0;
     s->talk=TALK_NONE;
     switch (talk) {
         case TALK_WAKE: s->stage=INTRO_EXPLORE; break;
@@ -191,8 +249,13 @@ const char* poke_intro_speaker(const PokeIntro* s,const PokeGame* g) {
     }
 }
 const char* poke_intro_line(const PokeIntro* s,const PokeGame* g,unsigned line) {
+    static char page[2][37];
     (void)g;
     if (line>1) return "";
+    if (gPokeOpeningTextEnabled) {
+        opening_rom_page(opening_rom_dialogue(s), s->text_page, page);
+        return page[line];
+    }
     switch(s->talk) {
         case TALK_WAKE: return line ? "A: get up and begin your journey." : "A new morning in Pallet Town.";
         case TALK_OAK_WARNING: return line ? "Come to my lab. I can help." : "Wait! The grass is dangerous alone.";

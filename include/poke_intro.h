@@ -22,10 +22,18 @@ extern const PokeIntroMap gPokeIntroMaps[INTRO_ROOM_COUNT];
 extern const PokeIntroWarp gPokeIntroWarps[];
 extern const unsigned gPokeIntroWarpCount;
 
+/* Present only in the ROM-import build. Generated tables contain text
+ * extracted locally from the supported Red/Blue cartridge. */
+extern const unsigned gPokeOpeningTextEnabled;
+extern const char* const gPokeOpeningTalks[TALK_PC_FULL + 1];
+extern const char* const gPokeOpeningStarters[3]; /* Bulbasaur, Charmander, Squirtle */
+extern const char* const gPokeOpeningResults[2]; /* win, loss */
+
 typedef struct {
     uint8_t stage, room, talk, selection, starter, rival;
     uint8_t warp_pending, warp_room, warp_spawn;
     uint8_t escort_step, pc_taken, outcome, warp_armed;
+    uint8_t text_page;
     uint8_t reposition, reposition_x, reposition_z;
     int8_t look_x, look_z;
 } PokeIntro;

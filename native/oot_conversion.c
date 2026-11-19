@@ -312,42 +312,10 @@ void PokeOot_Update(PlayState* play) {
  * Game Boy ROM for outdoor signs, residents and Oak's grass warning.
  * The portable story remains responsible for Oak's escort and transitions.
  * Only a 2x36-character view is exposed to the native GfxPrint UI. */
-static const char* intro_line( const PokeIntro* intro, const PokeGame* game, unsigned line) {
-    static char wrapped[2][37];
-    const char* source;
-    s32 textId=POKE_PALLET_TEXT_NONE;
-    unsigned index=0, row=0, column=0;
-    if (line>1 || intro->room!=INTRO_PALLET || !gPokePalletMap.enabled ||
-        gPokePalletMap.texts==NULL) return poke_intro_line(intro,game,line);
-    switch (intro->talk) {
-        case TALK_OAK_WARNING: textId=POKE_PALLET_TEXT_OAK_UNSAFE; break;
-        case TALK_GIRL: textId=POKE_PALLET_TEXT_GIRL; break;
-        case TALK_FISHER: textId=POKE_PALLET_TEXT_FISHER; break;
-        case TALK_RED_SIGN: textId=POKE_PALLET_TEXT_PLAYER_HOUSE_SIGN; break;
-        case TALK_BLUE_SIGN: textId=POKE_PALLET_TEXT_RIVAL_HOUSE_SIGN; break;
-        case TALK_TOWN_SIGN: textId=POKE_PALLET_TEXT_TOWN_SIGN; break;
-        case TALK_LAB_SIGN: textId=POKE_PALLET_TEXT_LAB_SIGN; break;
-        default: break;
-    }
-    if (textId==POKE_PALLET_TEXT_NONE) return poke_intro_line(intro,game,line);
-    source=gPokePalletMap.texts[textId];
-    if (source==NULL || source[0]=='\0') return poke_intro_line(intro,game,line);
-    wrapped[0][0]=wrapped[1][0]='\0';
-    /* Stable, bounded output: support original line endings and wrap after
-     * 36 characters without overrunning the N64 framebuffer text box. */
-    while (source[index]!='\0' && index<POKE_PALLET_TEXT_LIMIT && row<2) {
-        char ch=source[index++];
-        if (ch=='\r') continue;
-        if (ch=='\n' || column==36) {
-            wrapped[row][column]='\0';
-            ++row;column=0;
-            if (row>=2) break;
-            if (ch=='\n') continue;
-        }
-        wrapped[row][column++]=ch;
-    }
-    if (row<2) wrapped[row][column]='\0';
-    return wrapped[line];
+/* All imported dialogue, including pages, is rendered by the shared ROM
+ * story adapter. The authored prototype remains the opt-out build. */
+static const char* intro_line(const PokeIntro* intro, const PokeGame* game, unsigned line) {
+    return poke_intro_line(intro, game, line);
 }
 
 static void human(PlayState* play,s32 kind,f32 x,f32 y,f32 z,s16 yaw,f32 gait) {
