@@ -38,7 +38,8 @@ class OverlayTests(unittest.TestCase):
             "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
             "src/code/z_player_lib.c": '#include "player.h"\n    return false;\n}\n\ns32 Player_OverrideLimbDrawGameplayFirstPerson\n    return false;\n}\n\ns32 Player_OverrideLimbDrawGameplayCrawling\n',
-            "src/code/z_camera.c": '    if (sOOBTimer < 200) {\n'
+            "src/code/z_camera.c": '#include "play_state.h"\n'
+                                   '    if (sOOBTimer < 200) {\n'
                                    '        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);\n',
             "include/tables/scene_table.h": 'DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST, 0, 0)\n',
             "spec/scenes_n64.inc": '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
