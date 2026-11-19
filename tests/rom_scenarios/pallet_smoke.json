@@ -1,0 +1,59 @@
+{
+  "name": "Pallet Town: boots, movement, no N64 exception",
+  "description": "Real ParaLLEl N64 run, freshly isolated saves. Inputs are RetroPad; left-stick Y negative is forward. Collects two native framebuffer screenshots.",
+  "steps": [
+    {
+      "action": "wait",
+      "seconds": 6
+    },
+    {
+      "action": "assert_status"
+    },
+    {
+      "action": "screenshot",
+      "name": "pallet_spawn"
+    },
+    {
+      "action": "assert_visible",
+      "image": "pallet_spawn",
+      "min_color_spread": 35
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "pallet_spawn"
+    },
+    {
+      "action": "stick",
+      "stick": "left",
+      "x": 0,
+      "y": -25000,
+      "seconds": 1.5
+    },
+    {
+      "action": "wait",
+      "seconds": 0.6
+    },
+    {
+      "action": "screenshot",
+      "name": "after_walk"
+    },
+    {
+      "action": "assert_visible",
+      "image": "after_walk",
+      "min_color_spread": 35
+    },
+    {
+      "action": "assert_changed",
+      "before": "pallet_spawn",
+      "after": "after_walk",
+      "min_difference": 1.5
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "after_walk"
+    },
+    {
+      "action": "assert_status"
+    }
+  ]
+}
