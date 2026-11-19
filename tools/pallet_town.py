@@ -159,10 +159,10 @@ class Geometry:
         for x,z in ((-160,-1050),(170,-1050),(-240,625),(248,625)):
             self.box(x,z,39,8,96,WHITE)
             self.box(x,z,43,10,10,RED,y0=96)
-        for x1,x2,z in ((-695,-250,465),(250,695,465),(-665,-225,-315),(225,665,-315)):
-            for x in range(x1,x2,94):
+        for fence_x1,fence_x2,z in ((-695,-250,465),(250,695,465),(-665,-225,-315),(225,665,-315)):
+            for x in range(fence_x1,fence_x2,94):
                 self.box(x,z,8,8,85,WHITE)
-            self.box((x1+x2)//2,z,abs(x2-x1)//2,7,13,WHITE,y0=49)
+            self.box((fence_x1+fence_x2)//2,z,abs(fence_x2-fence_x1)//2,7,13,WHITE,y0=49)
 
         # Reliable flat walkable ground and blocking collision for the edges.
         self.collision_quad((x1,0,z1),(x1,0,z2),(x2,0,z2),(x2,0,z1))
