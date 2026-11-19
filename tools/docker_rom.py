@@ -70,7 +70,8 @@ def docker_environment() -> tuple[str, str]:
 
 
 def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
-                  control_boot: bool = False, oot_conversion: bool = False) -> None:
+                  control_boot: bool = False, oot_conversion: bool = False,
+                  refresh_setup: bool = False) -> None:
     if control_boot and oot_conversion:
         raise RuntimeError("The control and OoT conversion modes are mutually exclusive.")
     if base is None and not check_tools:
@@ -129,6 +130,8 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
         command.append("--control-boot")
     if oot_conversion:
         command.append("--oot-conversion")
+    if refresh_setup:
+        command.append("--refresh-setup")
     subprocess.run(command, cwd=ROOT, check=True)
     label = ("poke-n64-control" if control_boot else
              "poke-n64-oot" if oot_conversion else "poke-n64")
@@ -146,6 +149,8 @@ def main() -> None:
                         help="build a stock-boot control ROM alongside the custom game")
     parser.add_argument("--oot-conversion", action="store_true",
                         help="build the PlayState-based Pokémon total conversion")
+    parser.add_argument("--refresh-setup", action="store_true",
+                        help="rerun the complete upstream OoT extraction even if cached")
     parser.add_argument("--check-tools", action="store_true",
                         help="build the image and compile native objects without a ROM")
     args = parser.parse_args()
@@ -158,8 +163,9 @@ def main() -> None:
         # Fail on missing or mismatched input before any Docker downloads/writes.
         path, _ = select_rom(args.rom, args.roms_dir)
         print(f"Validated base ROM: {path}", flush=True)
+        overrides = {"refresh_setup": True} if args.refresh_setup else {}
         run_in_docker(path, args.jobs, control_boot=args.control_boot,
-                      oot_conversion=args.oot_conversion)
+                      oot_conversion=args.oot_conversion, **overrides)
 
 
 if __name__ == "__main__":
