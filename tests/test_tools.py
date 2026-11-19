@@ -48,7 +48,9 @@ class OverlayTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
         for name in ("native/poke_state.c", "native/poke_state.h", "native/oot_conversion.c",
-                     "native/oot_conversion.h", "include/poke.h", "src/core.c", "src/save.c"):
+                     "native/oot_conversion.h", "native/stadium_asset.h",
+                     "native/stadium_asset_stub.c", "include/poke.h",
+                     "src/core.c", "src/save.c"):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(f"/* project fixture: {name} */\n")
@@ -139,6 +141,8 @@ class OverlayTests(unittest.TestCase):
         self.assertNotIn("GAMESTATE_POKE", (self.engine / "include/tables/gamestate_table.h").read_text())
         self.assertTrue((self.engine / "include/poke_oot.h").exists())
         self.assertTrue((self.engine / "src/code/poke_oot.c").exists())
+        self.assertIn("poke_stadium_asset.o", spec)
+        self.assertIn("PokeStadium_DrawBulbasaur", (self.engine / "src/code/poke_stadium_asset.c").read_text())
         first = (self.engine / bootstrap.MANIFEST).read_bytes()
         with contextlib.redirect_stdout(io.StringIO()):
             bootstrap.install(self.engine, boot_mode="oot")
