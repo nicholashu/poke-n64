@@ -146,6 +146,27 @@ class DockerBuildTests(unittest.TestCase):
             self.assertFalse(call.kwargs.get("shell", False))
             self.assertTrue(call.kwargs["check"])
 
+    def test_oot_conversion_uses_distinct_build_output_and_engine(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            docker_rom.run_in_docker(self.base, 2, oot_conversion=True)
+        build, launch = [call.args[0] for call in self.run.call_args_list]
+        self.assertIn("--oot-conversion", launch)
+        self.assertEqual("/project/build/docker-engine-arm64-oot",
+                         launch[launch.index("--engine") + 1])
+        self.assertIn("poke-n64-oot.z64", output.getvalue())
+
+    def test_oot_toolchain_compiles_playstate_adapter_not_legacy_state(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            docker_rom.run_in_docker(None, 1, check_tools=True, oot_conversion=True)
+        commands = [call.args[0] for call in self.run.call_args_list]
+        self.assertTrue(any("tools/check_native.py" in cmd and "--oot-conversion" in cmd
+                            for cmd in commands))
+
+    def test_mutually_exclusive_boot_modes_are_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "mutually exclusive"):
+            docker_rom.run_in_docker(self.base, 1, control_boot=True, oot_conversion=True)
+        self.run.assert_not_called()
+
     def test_control_boot_runs_separately_with_verified_input(self) -> None:
         self.environment.return_value = ("/usr/bin/docker", "linux/arm64")
         with contextlib.redirect_stdout(io.StringIO()) as output:
@@ -277,7 +298,7 @@ class DockerBuildTests(unittest.TestCase):
              contextlib.redirect_stdout(io.StringIO()):
             docker_rom.main()
         select.assert_called_once_with(self.base, self.roms)
-        launch.assert_called_once_with(self.base, 2, control_boot=False)
+        launch.assert_called_once_with(self.base, 2, control_boot=False, oot_conversion=False)
 
 
 if __name__ == "__main__":
