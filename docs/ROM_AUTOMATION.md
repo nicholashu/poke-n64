@@ -19,6 +19,9 @@ make test-rom
 # Rebuild the ROM from the locally provided Zelda dump, then test it.
 make rom-oot-e2e
 
+# Test a real wild Rattata battle, including numeric HP damage:
+make test-battle
+
 # Choose a different scenario:
 make test-rom ROM_SCENARIO=tests/rom_scenarios/pallet_smoke.json
 ```
@@ -79,6 +82,7 @@ outside the run directory or arbitrary memory writes). Each step has an
 | `assert_visible` | `{"action":"assert_visible","image":"walk","min_color_spread":35}` | Reject blank/uniform images |
 | `assert_changed` | `{"action":"assert_changed","before":"spawn","after":"walk","min_difference":1.5}` | Detect image movement |
 | `assert_movement` | `{"action":"assert_movement","idle_before":"idle1","before":"idle2","after":"walk","ratio":1.8}` | Check walking changes the image more than idle animation/title fading |
+| `assert_hp_decreased` | `{"action":"assert_hp_decreased","before":"battle_menu","after":"after_attack","expected_max_hp":17}` | Parse enemy HP from the native battle HUD via macOS Vision OCR and require real numeric HP loss |
 | `assert_no_fault` | `{"action":"assert_no_fault","image":"walk"}` | OCR and reject recognizable N64 exception screens |
 | `assert_text` | `{"action":"assert_text","image":"walk","contains":"PALLET"}` | Assert readable HUD/menu text |
 | `assert_status` | `{"action":"assert_status"}` | Check emulator still playing |
@@ -97,6 +101,31 @@ It boots, waits for the title banner to settle, captures two idle
 reference frames, moves Link forward, captures again, and verifies the movement
 diff exceeds the idle animation/title-card drift. On the current macOS\nParallel Launcher build, Remote RetroPad UDP analog packets reach the frontend\nbut have not reliably moved Link, so the smoke uses the verified `W` keyboard\nbinding via `tools/retroarch_keys.swift` (macOS Accessibility permission\nrequired). The raw `stick` action remains available for protocol experiments. The test also checks for
 OoT's exception overlays.
+
+### Live battle regression
+
+`tests/rom_scenarios/battle_smoke.json` exercises the native Pokémon battle
+without a simulated core or imported saves. It uses the installed Parallel
+N64 **independent C-button layout**, which differs from normal RetroPad
+button names:
+
+- Hold **E + Left Arrow** (macOS keycodes 14 + 123) to pick Bulbasaur.
+- Hold **E + R + Shift** (14 + 15 + 56) to open the L+R+B wild Rattata battle.
+- Press **Space** (49) to choose **Fight**, then again to use **Tackle**.
+- Verify **Rattata**, **Fight**, **Tackle**, the turn-result message and the
+  enemy's numeric `HP current/max` before and after the attack.
+
+These are sent exclusively to the test-owned RetroArch process using
+`retroarch_keys.swift`; they never remap or change the user's saved input
+configuration. The numeric HP assertion handles common macOS Vision OCR
+errors from the low-resolution HUD (for example, `HP 17/17` appearing as
+`HР 17717`). Unlike a generic screenshot-difference check, it reports
+the exact damage or fails when it cannot prove an HP decrease.
+
+A single Tackle can miss according to the game rules. When it does, the
+strict test will report a failed HP assertion rather than claiming a hit.
+`battle_probe.json` is a diagnostic alternative which records every stage
+without asserting HP loss.
 
 ### Limitations and future precision
 
