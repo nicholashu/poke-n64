@@ -73,6 +73,12 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         return
     old_manifest_path = engine / MANIFEST
     old_manifest = json.loads(old_manifest_path.read_text()) if old_manifest_path.exists() else {}
+    # A previous overlay can leave stale source/object files. Never mix the
+    # standalone prototype and OoT total conversion in one engine checkout.
+    if boot_mode == "oot" and "src/code/poke_state.c" in old_manifest:
+        raise RuntimeError("This checkout contains the legacy overlay. Use a new --engine directory.")
+    if boot_mode == "poke" and "src/code/poke_oot.c" in old_manifest:
+        raise RuntimeError("This checkout contains the OoT conversion. Use a new --engine directory.")
     original: dict[str, bytes] = {}
     outputs: dict[str, bytes] = {}
 
