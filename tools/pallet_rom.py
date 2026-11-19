@@ -418,7 +418,9 @@ def compile_world(world: dict) -> dict:
                     if world.get("opening_texts") else "synthetic fixture without opening dialogue"),
         "oak_event":"authored gen1_pallet_oak_v1 adapter; collision-aware 3D escort",
         "assembly_translation":False,"post_lab_events":False,"sram_persistence":False,
-        "music":False,"interiors":False,"yellow":False},
+        "music":False,"interior_collision":bool(world.get("rooms")),
+        "interior_procedural_art":bool(world.get("rooms")),
+        "interior_object_runtime":False,"yellow":False},
         "verification":"Generated data only. Requires native build and emulator verification."})
     return {"scene_header":sh,"scene":sb,"room_header":rh,"room":rb,
             "data_source":native_data_source(world,info),"metadata":info,"world":world}

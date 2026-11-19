@@ -171,7 +171,7 @@ def _signed_byte(value: int) -> int:
 
 
 def _objects(rom: RomReader, profile: RomProfile, bank: int, address: int,
-             width: int, height: int) -> dict[str, Any]:
+             width: int, height: int, map_id: int = 0) -> dict[str, Any]:
     offset = rom.pointer(bank, address, context="Pallet object data")
     cur = _Cursor(rom, offset, "Pallet object data")
     border = cur.byte()
@@ -226,13 +226,14 @@ def _objects(rom: RomReader, profile: RomProfile, bank: int, address: int,
     # Initial visibility is stored separately from each object record. OFF/ON
     # are 0x11/0x15, not booleans. Stop when a different map begins.
     toggle_bank = profile.toggle_pointers // BANK_SIZE
-    toggle_address = rom.word(profile.toggle_pointers, "Pallet toggle pointer")
+    toggle_address = rom.word(profile.toggle_pointers + map_id * 2, "map toggle pointer")
     toggle = _Cursor(rom, rom.pointer(toggle_bank, toggle_address,
                                      context="Pallet object toggles"), "Pallet object toggles")
     seen = set()
-    for _ in range(17):
+    map_id_expected = map_id
+    for _ in range(32):
         map_id = toggle.byte()
-        if map_id != 0:
+        if map_id != map_id_expected:
             break
         object_id, state = toggle.byte(), toggle.byte()
         if not 1 <= object_id <= len(objects) or object_id in seen:
@@ -242,7 +243,7 @@ def _objects(rom: RomReader, profile: RomProfile, bank: int, address: int,
         seen.add(object_id)
         objects[object_id - 1]["visible_on_start"] = state == 0x15
     else:
-        raise RomError("Unterminated Pallet toggle data")
+        raise RomError("Unterminated map toggle data")
     return {"object_rom_offset": offset, "border_block": border, "warps": warps,
             "signs": signs, "objects": objects, "spawn_warps": spawns}
 
@@ -459,10 +460,91 @@ def parse_pallet(data: bytes, profile: RomProfile) -> dict[str, Any]:
     }
 
 
+
+# Complete first-playable-area map profiles from pret/pokered map_constants.asm
+# and tileset_headers.asm. ROM header pointers supply all actual geometry.
+OPENING_MAPS = (
+    ("PalletTown", 0x00, 0, (10, 9)),
+    ("RedsHouse2F", 0x26, 4, (4, 4)),
+    ("RedsHouse1F", 0x25, 1, (4, 4)),
+    ("BluesHouse", 0x27, 8, (4, 4)),
+    ("OaksLab", 0x28, 5, (5, 6)),
+)
+
+
+def extract_room(rom: RomReader, profile: RomProfile, name: str, map_id: int,
+                 expected_tileset: int, dimensions: tuple[int, int]) -> dict[str, Any]:
+    """Read a known interior directly from map/object/block/collision ROM tables.
+
+    No movement/assembly is interpreted. Text and story scripts are handled
+    separately by the source-linked event adapters.
+    """
+    bank, offset = _map_location(rom, profile, map_id)
+    cur = _Cursor(rom, offset, f"{name} header")
+    tileset, height_blocks, width_blocks = cur.read(3)
+    if tileset != expected_tileset or (width_blocks, height_blocks) != dimensions:
+        raise RomError(f"{name} header does not match the verified Gen 1 profile")
+    block_ptr, text_ptr, script_ptr = cur.word(), cur.word(), cur.word()
+    connections = cur.byte()
+    if connections:
+        raise RomError(f"{name}: interior map must not declare connections")
+    object_ptr = cur.word()
+    width, height = width_blocks * 2, height_blocks * 2
+    objects = _objects(rom, profile, bank, object_ptr, width, height, map_id)
+    ts = rom.read(profile.tilesets + tileset * 12, 12, f"{name} tileset")
+    tile_bank = ts[0]
+    block_addr = int.from_bytes(ts[1:3], "little")
+    collision_addr = int.from_bytes(ts[5:7], "little")
+    collision = _Cursor(rom, rom.pointer(tile_bank, collision_addr,
+                                         context=f"{name} collision tiles"), "collision")
+    passable = set()
+    for _ in range(256):
+        tile = collision.byte()
+        if tile == 0xFF:
+            break
+        if tile in passable:
+            raise RomError(f"{name}: duplicate passable graphic tile")
+        passable.add(tile)
+    else:
+        raise RomError(f"{name}: unterminated collision table")
+    blocks_offset = rom.pointer(bank, block_ptr, width_blocks * height_blocks, f"{name} blocks")
+    ids = rom.read(blocks_offset, width_blocks * height_blocks, f"{name} blocks")
+    tile_blocks = rom.pointer(tile_bank, block_addr,
+                              (max((*ids, objects["border_block"])) + 1) * 16,
+                              f"{name} blockset")
+    rows = [list(ids[i:i+width_blocks]) for i in range(0, len(ids), width_blocks)]
+    cells = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            block_id = rows[y//2][x//2]
+            block = rom.read(tile_blocks + block_id*16, 16, f"{name} block tile")
+            p = (y % 2)*8 + (x % 2)*2
+            tiles = [block[p], block[p+1], block[p+4], block[p+5]]
+            row.append({"block_id": block_id, "tiles": tiles,
+                        "collision_tile": tiles[2], "walkable": tiles[2] in passable})
+        cells.append(row)
+    return {
+        "id": map_id, "name": name, "bank": bank, "rom_offset": offset,
+        "width": width, "height": height, "width_blocks": width_blocks,
+        "height_blocks": height_blocks, "tileset_id": tileset,
+        "blocks_rom_offset": blocks_offset, "blocks": rows, "cells": cells,
+        "script_rom_offset": rom.pointer(bank, script_ptr, context=f"{name} script"),
+        "text_table_rom_offset": rom.pointer(bank, text_ptr, context=f"{name} text table"),
+        "tileset": {"bank": tile_bank, "block_rom_offset": tile_blocks,
+                    "collision_tiles": sorted(passable)},
+        **objects,
+    }
+
 def extract_pallet(rom: bytes) -> dict[str, Any]:
     """Strict public entry point: recognize a complete ROM, then extract data."""
     profile = identify_rom(rom)
     world = parse_pallet(rom, profile)
+    reader = RomReader(rom)
+    world["rooms"] = {"PalletTown": world["map"]}
+    for name, map_id, tileset, dimensions in OPENING_MAPS[1:]:
+        world["rooms"][name] = extract_room(reader, profile, name, map_id,
+                                             tileset, dimensions)
     # The verified cartridge contains the original dialogue for the entire
     # opening sequence, not just Pallet's signs. No copyrighted text is stored
     # in the converter's source tree.

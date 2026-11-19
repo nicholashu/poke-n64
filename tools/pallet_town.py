@@ -564,8 +564,24 @@ def split_segment_header(source: str, name: str) -> tuple[str, str]:
     return header, body
 
 
-def build_segments(room_name="PalletTown"):
-    scene,room,metadata=build(room_name)
+def build_segments(room_name="PalletTown", imported_room=None):
+    if imported_room is None:
+        scene,room,metadata=build(room_name)
+    else:
+        old=ROOMS[room_name]
+        if (imported_room["width"], imported_room["height"]) != tuple(old["dimensions"]):
+            raise ValueError(f"{room_name} ROM dimensions differ from N64 scene")
+        replacement=dict(old)
+        replacement["static_walkable_rows"]=[
+            ''.join('.' if cell["walkable"] else '#' for cell in row)
+            for row in imported_room["cells"]]
+        # Props, lighting and furniture are our own visual interpretation.
+        # Only source-ROM collision geometry determines gameplay boundaries.
+        ROOMS[room_name]=replacement
+        try:
+            scene,room,metadata=build(room_name)
+        finally:
+            ROOMS[room_name]=old
     prefix="gPallet" if room_name=="PalletTown" else "g"+room_name
     scene_header,scene_body=split_segment_header(scene,prefix+"SceneHeader")
     room_header,room_body=split_segment_header(room,prefix+"RoomHeader")

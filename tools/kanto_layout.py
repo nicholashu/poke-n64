@@ -48,25 +48,66 @@ def validate():
                 raise ValueError(f"{name}: invalid destination spawn")
 
 
-def core_source():
+def core_source(rooms=None):
+    """Generate playable collision and warp tables from the supplied GB ROM.
+
+    For ROM-free developer builds, retain the authored five-room fixture.
+    Map IDs and warp destination semantics come from pret/pokered.
+    """
     validate()
-    lines = ['/* Generated semantic map coordinates; no graphic assets. */', '#include "poke_intro.h"']
-    for i, name in enumerate(ORDER):
-        rows = ROOMS[name]["static_walkable_rows"]
+    if rooms is not None and set(rooms) != set(ORDER):
+        raise ValueError("Imported opening must contain every first-area map")
+    ids = {0x00:"PalletTown", 0x25:"RedsHouse1F", 0x26:"RedsHouse2F",
+           0x27:"BluesHouse", 0x28:"OaksLab"}
+    # The ROM encodes *which warp* to use. The native scene indices are
+    # different because the door tiles are one or two cells wide.
+    entry_spawns = {
+        ("PalletTown", "RedsHouse1F"):1,
+        ("PalletTown", "BluesHouse"):0,
+        ("PalletTown", "OaksLab"):0,
+        ("RedsHouse1F", "PalletTown"):0,
+        ("RedsHouse1F", "RedsHouse2F"):1,
+        ("RedsHouse2F", "RedsHouse1F"):0,
+        ("BluesHouse", "PalletTown"):1,
+        ("OaksLab", "PalletTown"):2,
+    }
+    lines = ['/* Generated from a user-supplied ROM when available. */',
+             '#include "poke_intro.h"']
+    for i,name in enumerate(ORDER):
+        if rooms is None:
+            rows=ROOMS[name]["static_walkable_rows"]
+        else:
+            room=rooms[name]
+            rows=[''.join('.' if c["walkable"] else '#' for c in row)
+                  for row in room["cells"]]
         lines += [f'static const char* const sMap{i}[] = {{']
         lines += [f'    "{row}",' for row in rows]
         lines += ['};']
     lines += ['const PokeIntroMap gPokeIntroMaps[INTRO_ROOM_COUNT] = {']
-    for i, name in enumerate(ORDER):
-        room = ROOMS[name]; w,h = room["dimensions"]
-        lines.append(f'    {{ {w}, {h}, "{room["title"]}", sMap{i} }},')
+    for i,name in enumerate(ORDER):
+        if rooms is None:
+            room=ROOMS[name]; w,h=room["dimensions"]
+        else:
+            room=rooms[name]; w,h=room["width"],room["height"]
+        lines.append(f'    {{ {w}, {h}, "{ROOMS[name]["title"]}", sMap{i} }},')
     lines += ['};', 'const PokeIntroWarp gPokeIntroWarps[] = {']
-    for i, name in enumerate(ORDER):
-        for warp in ROOMS[name]["warps"]:
-            x,z = warp["at"]
-            lines.append(f'    {{ {i}, {x}, {z}, {ORDER.index(warp["destination"])}, {warp["spawn"]} }},')
-    lines += ['};', 'const unsigned gPokeIntroWarpCount = sizeof(gPokeIntroWarps)/sizeof(gPokeIntroWarps[0]);', '']
-    return '\n'.join(lines)
+    for i,name in enumerate(ORDER):
+        if rooms is None:
+            warps=[(w["at"][0],w["at"][1],w["destination"],w["spawn"])
+                   for w in ROOMS[name]["warps"]]
+        else:
+            warps=[]
+            for w in rooms[name]["warps"]:
+                destination=("PalletTown" if w["destination_uses_last_map"]
+                             else ids.get(w["destination_map"]))
+                if destination is None or (name,destination) not in entry_spawns:
+                    raise ValueError(f"Unimplemented first-area warp: {name} to {destination}")
+                warps.append((w["x"],w["y"],destination,entry_spawns[(name,destination)]))
+        for x,z,dest,spawn in warps:
+            lines.append(f'    {{ {i}, {x}, {z}, {ORDER.index(dest)}, {spawn} }},')
+    lines += ['};',
+              'const unsigned gPokeIntroWarpCount = sizeof(gPokeIntroWarps)/sizeof(gPokeIntroWarps[0]);', '']
+    return '\\n'.join(lines)
 
 
 def native_header():
