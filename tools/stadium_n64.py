@@ -130,8 +130,25 @@ def _tex16(w: int, h: int, rgba: bytes):
     return target_w, target_h, packed
 
 
+def _primitive_texture(primitive: dict, texture_count: int) -> int:
+    """Choose a valid texture, or preserve a geometry-only Stadium primitive.
+
+    Real Stadium meshes contain untextured display-list primitives, commonly
+    with a 0xFFFF texture index. Animated materials may have alternate valid
+    textures in their map. Never discard polygons because no texture exists.
+    """
+    index = primitive["texture"]
+    if 0 <= index < texture_count:
+        return index
+    for key in sorted(primitive.get("maps", {})):
+        candidate = primitive["maps"][key]
+        if 0 <= candidate < texture_count:
+            return candidate
+    return NONE
+
+
 def _quantized_vertex(vertex, pose_matrices, factor: float, floor: float,
-                      texture_dims: tuple[int, int]):
+                      texture_dims: tuple[int, int], untextured: bool = False):
     x, y, z, u, v, nx, ny, nz, bone = vertex
     px, py, pz = _transform(pose_matrices[bone],
                              (x * factor, y * factor, z * factor))
@@ -139,8 +156,9 @@ def _quantized_vertex(vertex, pose_matrices, factor: float, floor: float,
     if not all(math.isfinite(a) and -32768 <= a <= 32767 for a in (px, py, pz)):
         raise StadiumExportError("Model vertex outside signed 16-bit N64 coordinate range")
     width, height = texture_dims
-    s = int(round(u * width * 32))
-    t = int(round(v * height * 32))
+    # Untextured geometry can carry arbitrary unused UV coordinates.
+    s = 0 if untextured else int(round(u * width * 32))
+    t = 0 if untextured else int(round(v * height * 32))
     if not -32768 <= s <= 32767 or not -32768 <= t <= 32767:
         raise StadiumExportError("Model texture coordinates exceed signed 16-bit N64 range")
     # RSP uses RGB vertex shading. Keep side and bottom faces legible with a
@@ -160,8 +178,10 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
     factor = (model["rootScale"] or 1.0) * height / model["height"]
     batches, flat_vertices, faces = _batch_mesh(model)
     tex = [_tex16(*t) for t in model["textures"]]
-    if not tex:
-        raise StadiumExportError("No textures in Stadium model")
+    textures_for_primitive = [
+        _primitive_texture(primitive, len(tex)) for primitive in model["primitives"]
+    ]
+    untextured_count = sum(index == NONE for index in textures_for_primitive)
     count = len(flat_vertices)
     total_texture_bytes = sum(len(pixels) * 2 for _, _, pixels in tex)
     if total_texture_bytes > MAX_TEXTURE_BYTES:
@@ -185,12 +205,12 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
             verts = []
             for primitive_index, vertex_index in flat_vertices:
                 primitive = model["primitives"][primitive_index]
-                texture_id = primitive["texture"]
-                if not 0 <= texture_id < len(tex):
-                    raise StadiumExportError("Mesh references a nonexistent Stadium texture")
+                texture_id = textures_for_primitive[primitive_index]
+                texture_dims = ((1, 1) if texture_id == NONE else
+                                (tex[texture_id][0], tex[texture_id][1]))
                 verts.append(_quantized_vertex(
                     primitive["vertices"][vertex_index], matrices, factor,
-                    model["floor"], (tex[texture_id][0], tex[texture_id][1])))
+                    model["floor"], texture_dims, untextured=texture_id == NONE))
             frames.append(verts)
         per_clip.append((clip_name, frames, sample_indices))
 
@@ -233,7 +253,7 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
         f"static const StadiumBatch sBatches[{len(batches)}] = {{",
     ])
     for primitive_index, first, verts, tri_start, tri_count in batches:
-        texture = model["primitives"][primitive_index]["texture"]
+        texture = textures_for_primitive[primitive_index]
         parts.append(f"    {{ {texture}, {first}, {verts}, {tri_start}, {tri_count} }},")
     parts.append("};")
     parts.append(f"static const u8 sFaces[{len(faces)}][3] = {{")
@@ -262,12 +282,21 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
         "    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATERGBA, G_CC_MODULATERGBA);",
         "    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_AA_ZB_OPA_SURF, G_RM_AA_ZB_OPA_SURF2);",
         "    gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);",
-        "    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);",
+        "    gSPTexture(POLY_OPA_DISP++, 0, 0, 0, G_TX_RENDERTILE, G_OFF);",
         f"    for (batch = 0; batch < {len(batches)}; batch++) {{",
         "        const StadiumBatch* b = &sBatches[batch];",
         "        if (currentTexture != b->texture) {",
         "            currentTexture = b->texture;",
-        "            switch (currentTexture) {",
+        "            if (currentTexture == 65535) {",
+        "                /* Geometry-only Stadium primitive; shade without texturing. */",
+        "                gDPPipeSync(POLY_OPA_DISP++);",
+        "                gSPTexture(POLY_OPA_DISP++, 0, 0, 0, G_TX_RENDERTILE, G_OFF);",
+        "                gDPSetCombineMode(POLY_OPA_DISP++, G_CC_SHADE, G_CC_SHADE);",
+        "            } else {",
+        "                gDPPipeSync(POLY_OPA_DISP++);",
+        "                gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATERGBA, G_CC_MODULATERGBA);",
+        "                gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);",
+        "                switch (currentTexture) {",
     ])
     for i, (w, h, _) in enumerate(tex):
         parts.extend([
@@ -279,7 +308,8 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
             "                    break;",
         ])
     parts.extend([
-        "                default: break;",
+        "                    default: break;",
+        "                }",
         "            }",
         "        }",
         "        gSPVertex(POLY_OPA_DISP++, vtx + b->first, b->vertices, 0);",
@@ -299,6 +329,7 @@ def emit_source(model: dict, height: float = 110.0, max_frames: int = MAX_FRAMES
     return "\n".join(parts), {
         "species": 1, "verticesPerFrame": count, "batches": len(batches),
         "triangles": len(faces), "textureCount": len(tex),
+        "untexturedPrimitives": untextured_count,
         "frameCounts": {label: len(frames) for label, frames, _ in per_clip},
         "sampleFrames": {label: samples for label, _, samples in per_clip},
         "bakedVertexBytes": count * 16 * sum(len(frames) for _, frames, _ in per_clip),
@@ -322,7 +353,8 @@ def main():
         print(f"Generated private native N64 model: {args.output}")
         print(f"Frames: {stats['frameCounts']} | "
               f"Meshes: {stats['batches']} batches | "
-              f"Triangles: {stats['triangles']}")
+              f"Triangles: {stats['triangles']} | "
+              f"Untextured primitives: {stats['untexturedPrimitives']}")
         print("Next: make rom-oot-docker (build adapter picks up this asset automatically)")
     except (OSError, StadiumExportError) as e:
         sys.exit(f"Stadium native export failed: {e}")
