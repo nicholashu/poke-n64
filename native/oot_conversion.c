@@ -88,17 +88,10 @@ void PokeOot_PrepareInput(PlayState* play) {
     in->rel.button&=~(BTN_A|BTN_B|BTN_START|BTN_L|BTN_R|BTN_CLEFT|BTN_CRIGHT|BTN_CUP|BTN_CDOWN);
 }
 
-static void field_camera(PlayState* play,Player* player) {
-    Vec3f at,eye;
-    s16 id=sPokeOot.fieldCameraId;
-    if (id==CAM_ID_NONE || PokeOot_BattleActive()) return;
-    at=player->actor.world.pos; at.y=24;
-    /* Fixed north orientation with a close, cutaway interior follow view. */
-    at.x=clamp(at.x,-180,180); at.z=clamp(at.z,-240,240);
-    eye.x=at.x; eye.y=at.y+550; eye.z=at.z+430;
-    Play_SetCameraAtEye(play,id,&at,&eye);
-    Play_SetCameraFov(play,id,48);
-}
+/* Keep OoT's main chase camera active in every Pokemon room.
+ * The previous custom subcamera forced eye.y=player.y+550, creating
+ * the top-down viewpoint the game is not intended to use. A battle
+ * temporarily switches to its own subcamera, then restores CAM_ID_MAIN. */
 static void silent_navi(Actor* actor,PlayState* play) {
     (void)actor; (void)play;
 }
@@ -138,15 +131,7 @@ void PokeOot_OnSceneEnter(PlayState* play) {
     poke_intro_enter(&sPokeOot.intro,(u8)room);
     sPokeOot.havePrevious=0; sPokeOot.gait=0;
     sPokeOot.battleCameraId=CAM_ID_NONE; sPokeOot.fieldCameraId=CAM_ID_NONE;
-    if (room!=INTRO_PALLET) {
-        s16 id=Play_CreateSubCamera(play);
-        sPokeOot.fieldCameraId=id;
-        if (id!=CAM_ID_NONE) {
-            Play_ChangeCameraStatus(play,CAM_ID_MAIN,CAM_STAT_WAIT);
-            Play_ChangeCameraStatus(play,id,CAM_STAT_ACTIVE);
-            if (GET_PLAYER(play)) field_camera(play,GET_PLAYER(play));
-        }
-    }
+    /* All five rooms now use OoT's normal main chase camera. */
 }
 static u16 battle_input(const Input* in) {
     u16 keys=0;
@@ -316,7 +301,6 @@ void PokeOot_Update(PlayState* play) {
         } else sPokeOot.gait=0;
     }
     sPokeOot.previous=p->actor.world.pos; sPokeOot.havePrevious=1;
-    field_camera(play,p);
     request_warp(play);
 }
 
