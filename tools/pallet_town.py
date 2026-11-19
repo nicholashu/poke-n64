@@ -382,6 +382,44 @@ def unused_room_source(index: int) -> str:
     ])
 
 
+def split_segment_header(source: str, name: str) -> tuple[str, str]:
+    """Put a scene/room command header in its own leading ROM object.
+
+    GCC may reorder module-level initialized globals in a single .o even when
+    the header was declared first in C. OoT's scene/room loader ALWAYS reads
+    its commands from offset 0, so the linker spec must include a separate
+    header object before the geometry/object data.
+
+    This splits after the complete SceneCmd initializer, retaining original
+    includes/extern declarations in both translation units. Source functions
+    remain available for inspection and synthetic ROM-free testing.
+    """
+    marker = f"SceneCmd {name}[] = {{"
+    if source.count(marker) != 1:
+        raise ValueError(f"Expected one {name} command header")
+    start = source.index(marker)
+    end = source.index("\n};", start) + len("\n};")
+    prefix = source[:start]
+    header = prefix + source[start:end] + "\n"
+    body = prefix + source[end:].lstrip("\n")
+    if f"SceneCmd {name}[]" in body:
+        raise ValueError(f"Unexpected duplicate header {name}")
+    return header, body
+
+
+def build_segments():
+    """Return header-first OoT objects and original Pallet metadata.
+
+    Link `scene_header` before `scene_body`, and `room_header` before
+    `room_body`, in the corresponding spot04 ROM segments. Never combine
+    the pairs in a single C object, because GCC can reorder their data.
+    """
+    scene, room, metadata = build()
+    scene_header, scene_body = split_segment_header(scene, "gPalletSceneHeader")
+    room_header, room_body = split_segment_header(room, "gPalletRoomHeader")
+    return scene_header, scene_body, room_header, room_body, metadata
+
+
 def build():
     g = Geometry().make()
     scene,room = scene_source(g),room_source(g)
