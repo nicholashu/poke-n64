@@ -132,10 +132,13 @@ class PalletOverlayTests(unittest.TestCase):
         self.assertTrue((self.engine / "include/poke_pallet_native.h").is_file())
         self.assertIn("PokeOot_PrepareInput(this)", (self.engine / "src/code/z_play.c").read_text())
         entry = (self.engine / "src/code/title_setup.c").read_text()
-        self.assertIn("gSaveContext.save.entranceIndex = ENTR_KOKIRI_FOREST_0;", entry)
-        self.assertNotIn("ENTR_KNOW_IT_ALL_BROS_HOUSE_0", entry)
-        # Preserve the full opening's scene/link layout for future integration,
-        # while imported mode starts in its own outdoor map and event runner.
+        self.assertIn("gSaveContext.save.entranceIndex = ENTR_KNOW_IT_ALL_BROS_HOUSE_0;", entry)
+        self.assertNotIn("gSaveContext.save.entranceIndex = ENTR_KOKIRI_FOREST_0;", entry)
+        # Imported outdoor geometry and text must share the five-room
+        # authored story, including the complete starter/rival battle.
+        runtime = (self.engine / "src/code/poke_oot.c").read_text()
+        self.assertIn("s32 PokeOot_ImportedPallet(void) { return 0; }", runtime)
+        self.assertIn("intro_line(s,g,(unsigned)i)", runtime)
         for name in bootstrap.ORDER[1:]:
             stem = "poke_" + bootstrap.ROOMS[name]["segment"]
             for suffix in ("_scene_header", "_scene", "_room_header", "_room"):
