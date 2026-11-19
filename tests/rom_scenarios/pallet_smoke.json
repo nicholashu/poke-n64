@@ -1,26 +1,34 @@
 {
   "name": "Pallet Town: boots, movement, no N64 exception",
-  "description": "Real ParaLLEl N64 run, freshly isolated saves. Inputs are RetroPad; left-stick Y negative is forward. Collects two native framebuffer screenshots.",
+  "description": "Wait for opening title overlay to settle, measure idle animation, then drive Link forward and require the visual movement to exceed idle drift; also check for N64 exception screens.",
   "steps": [
     {
       "action": "wait",
-      "seconds": 6
+      "seconds": 10
     },
     {
       "action": "assert_status"
     },
     {
       "action": "screenshot",
-      "name": "pallet_spawn"
+      "name": "idle_before"
     },
     {
       "action": "assert_visible",
-      "image": "pallet_spawn",
+      "image": "idle_before",
       "min_color_spread": 35
     },
     {
       "action": "assert_no_fault",
-      "image": "pallet_spawn"
+      "image": "idle_before"
+    },
+    {
+      "action": "wait",
+      "seconds": 1.5
+    },
+    {
+      "action": "screenshot",
+      "name": "idle_after"
     },
     {
       "action": "stick",
@@ -31,7 +39,7 @@
     },
     {
       "action": "wait",
-      "seconds": 0.6
+      "seconds": 0.35
     },
     {
       "action": "screenshot",
@@ -43,10 +51,12 @@
       "min_color_spread": 35
     },
     {
-      "action": "assert_changed",
-      "before": "pallet_spawn",
+      "action": "assert_movement",
+      "idle_before": "idle_before",
+      "before": "idle_after",
       "after": "after_walk",
-      "min_difference": 1.5
+      "ratio": 1.8,
+      "min_difference": 8
     },
     {
       "action": "assert_no_fault",
