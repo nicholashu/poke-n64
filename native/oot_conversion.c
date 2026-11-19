@@ -276,36 +276,77 @@ static void PokeOot_DrawPanel(GraphicsContext* gfx, s32 x, s32 y, s32 w, s32 h) 
 void PokeOot_Draw(PlayState* play) {
     GraphicsContext* gfx;
     GfxPrint printer;
+    PokeGame* game = &sPokeOot.game;
+    s32 battling = PokeOot_BattleActive();
+    s32 index;
+    unsigned choices;
 
     if (!sPokeOot.initialized) return;
     gfx = play->state.gfxCtx;
+
     PokeOot_DrawStadiumModel(play);
+    if (battling) {
+        PokeOot_DrawWildProxy(play);
+        PokeOot_DrawPanel(gfx, 8, 8, 170, 45);
+        PokeOot_DrawPanel(gfx, 155, 130, 157, 45);
+        PokeOot_DrawPanel(gfx, 8, 181, 304, 52);
+    } else {
+        PokeOot_DrawPanel(gfx, 8, 8, 304, 34);
+        PokeOot_DrawPanel(gfx, 8, 214, 304, 19);
+    }
 
     OPEN_DISPS(gfx);
     gSPSegment(OVERLAY_DISP++, 0, 0);
     GfxPrint_Init(&printer);
     GfxPrint_Open(&printer, OVERLAY_DISP);
     GfxPrint_SetColor(&printer, 255, 229, 155, 255);
-    GfxPrint_SetPosPx(&printer, 16, 10);
-    GfxPrint_Printf(&printer, "POKEMON RED 64 / OOT PLAYSTATE");
+    if (battling) {
+        const PokeMon* enemy = &game->enemy;
+        const PokeMon* own = &game->party[game->active];
+        GfxPrint_SetPosPx(&printer, 16, 13);
+        GfxPrint_Printf(&printer, "WILD %s L%u", poke_species(enemy->species)->name, enemy->level);
+        GfxPrint_SetPosPx(&printer, 16, 28);
+        GfxPrint_Printf(&printer, "HP %u/%u", enemy->hp, enemy->max_hp);
 
-    GfxPrint_SetColor(&printer, 244, 239, 219, 255);
-    GfxPrint_SetPosPx(&printer, 16, 22);
-    if (!(sPokeOot.game.flags & FLAG_STARTER)) {
-        GfxPrint_Printf(&printer, "L+C< BULB  L+C^ CHAR  L+C> SQUIRT");
-    } else {
-        const PokeMon* starter = &sPokeOot.game.party[0];
-        GfxPrint_Printf(&printer, "%s L%u  PARTY %u/6  STEPS %u",
-                         poke_species(starter->species)->name, starter->level,
-                         sPokeOot.game.party_count, sPokeOot.game.steps);
-    }
+        GfxPrint_SetPosPx(&printer, 163, 136);
+        GfxPrint_Printf(&printer, "%s L%u", poke_species(own->species)->name, own->level);
+        GfxPrint_SetPosPx(&printer, 163, 150);
+        GfxPrint_Printf(&printer, "HP %u/%u", own->hp, own->max_hp);
 
-    GfxPrint_SetColor(&printer, 225, 229, 230, 255);
-    GfxPrint_SetPosPx(&printer, 16, 216);
-    if (PokeStadium_AssetAvailable()) {
-        GfxPrint_Printf(&printer, "STADIUM BULBASAUR: L+R+A ATTACK");
+        choices = poke_menu_count(game);
+        GfxPrint_SetColor(&printer, 244, 239, 219, 255);
+        if (game->mode == MODE_MOVES || game->mode == MODE_BAG ||
+            game->mode == MODE_BATTLE || game->mode == MODE_PARTY) {
+            for (index = 0; index < 4 && index < choices; index++) {
+                GfxPrint_SetPosPx(&printer, 16 + (index / 2) * 146,
+                                 187 + (index % 2) * 12);
+                GfxPrint_Printf(&printer, "%c %.15s",
+                                 game->cursor == index ? '>' : ' ',
+                                 poke_menu_label(game, index));
+            }
+        }
+        GfxPrint_SetPosPx(&printer, 16, 216);
+        GfxPrint_Printf(&printer, "%.35s", game->log[POKE_LOG_LINES - 1]);
     } else {
-        GfxPrint_Printf(&printer, "STADIUM MODEL MISSING: make stadium-n64");
+        GfxPrint_SetPosPx(&printer, 16, 13);
+        GfxPrint_Printf(&printer, "POKEMON RED 64 / OOT PLAYSTATE");
+        GfxPrint_SetColor(&printer, 244, 239, 219, 255);
+        GfxPrint_SetPosPx(&printer, 16, 25);
+        if (!(game->flags & FLAG_STARTER)) {
+            GfxPrint_Printf(&printer, "L+C< BULB  L+C^ CHAR  L+C> SQUIRT");
+        } else {
+            const PokeMon* starter = &game->party[0];
+            GfxPrint_Printf(&printer, "%s L%u  PARTY %u/6  STEPS %u",
+                             poke_species(starter->species)->name, starter->level,
+                             game->party_count, game->steps);
+        }
+        GfxPrint_SetColor(&printer, 225, 229, 230, 255);
+        GfxPrint_SetPosPx(&printer, 16, 218);
+        if (PokeStadium_AssetAvailable()) {
+            GfxPrint_Printf(&printer, "L+R+A ATTACK  L+R+B WILD BATTLE");
+        } else {
+            GfxPrint_Printf(&printer, "STADIUM MODEL MISSING: make stadium-n64");
+        }
     }
     OVERLAY_DISP = GfxPrint_Close(&printer);
     GfxPrint_Destroy(&printer);
