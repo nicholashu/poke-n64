@@ -406,26 +406,44 @@ class Runner:
         print("Connected to live game:", response, flush=True)
 
     def capture(self, label: str) -> Path:
+        """Request a raw screenshot with bounded retries on dropped NCI frames.
+
+        The core occasionally ignores SCREENSHOT while finishing a scene frame.
+        The opening previously failed at out-of-bed despite the game advancing.
+        Retries keep the existing isolated directory and never import state.
+        """
         assert self.remote is not None
         directory = self.session / "screenshots"
-        existing = set(directory.iterdir())
-        self.remote.command("SCREENSHOT")
-        deadline = time.monotonic() + 6
-        while time.monotonic() < deadline:
-            for candidate in directory.iterdir():
-                if candidate in existing or candidate.suffix.lower() != ".png":
-                    continue
-                size1 = candidate.stat().st_size
-                if size1 > 80:
-                    time.sleep(0.12)
-                    if candidate.exists() and candidate.stat().st_size == size1:
-                        path = directory / (label + ".png")
-                        if candidate != path:
-                            candidate.rename(path)
-                        self.images[label] = path
-                        return path
-            time.sleep(0.10)
-        raise RuntimeError("RetroArch did not write a PNG screenshot into the isolated directory")
+        directory.mkdir(parents=True, exist_ok=True)
+        last_status = None
+        for attempt in range(3):
+            existing = set(directory.iterdir())
+            self.remote.command("SCREENSHOT")
+            deadline = time.monotonic() + 7
+            while time.monotonic() < deadline:
+                if self.process is not None and self.process.poll() is not None:
+                    raise RuntimeError("Test-owned emulator exited before screenshot capture")
+                for candidate in directory.iterdir():
+                    if candidate in existing or candidate.suffix.lower() != ".png":
+                        continue
+                    size1 = candidate.stat().st_size
+                    if size1 > 80:
+                        time.sleep(0.15)
+                        if candidate.exists() and candidate.stat().st_size == size1:
+                            path = directory / (label + ".png")
+                            if candidate != path:
+                                candidate.rename(path)
+                            self.images[label] = path
+                            return path
+                time.sleep(0.12)
+            last_status = self.remote.command("GET_STATUS", reply=True)
+            if last_status and "PLAYING" not in last_status:
+                raise RuntimeError(f"RetroArch stopped while capturing frame: {last_status}")
+            time.sleep(0.25)
+        raise RuntimeError(
+            f"RetroArch did not write a PNG after 3 screenshot requests; "
+            f"last emulator status: {last_status!r}"
+        )
 
     def step(self, item: dict) -> str:
         assert self.remote is not None
