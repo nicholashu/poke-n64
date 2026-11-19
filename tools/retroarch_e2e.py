@@ -46,7 +46,7 @@ FAULT_PHRASES = (
 )
 ACTIONS = frozenset({
     "wait", "tap", "press", "release", "release_all", "stick", "screenshot",
-    "assert_visible", "assert_changed", "assert_movement", "assert_text", "assert_no_fault",
+    "assert_visible", "assert_changed", "assert_movement", "assert_hp_decreased", "assert_text", "assert_no_fault",
     "assert_status", "pause", "resume", "frames", "key_hold", "key_chord",
 })
 
@@ -150,6 +150,15 @@ def validate_scenario(raw: object) -> dict:
         if action == "assert_changed":
             if step.get("before") not in known_images or step.get("after") not in known_images:
                 raise ValueError(f"Step {n}: both screenshots must exist before diff")
+        if action == "assert_hp_decreased":
+            if step.get("before") not in known_images or step.get("after") not in known_images:
+                raise ValueError(f"Step {n}: both HP screenshots must exist before assertion")
+            maximum = step.get("expected_max_hp")
+            minimum = step.get("min_damage", 1)
+            if type(maximum) is not int or not 1 <= maximum <= 9999:
+                raise ValueError(f"Step {n}: expected_max_hp must be an integer 1..9999")
+            if type(minimum) is not int or not 1 <= minimum <= maximum:
+                raise ValueError(f"Step {n}: min_damage must be an integer 1..expected_max_hp")
         if action == "assert_movement":
             if any(step.get(key) not in known_images for key in ("idle_before", "before", "after")):
                 raise ValueError(f"Step {n}: three screenshots must exist before movement assertion")
@@ -282,6 +291,48 @@ def recognize_text(path: Path) -> str:
     if result.returncode != 0:
         raise RuntimeError("macOS Vision OCR failed: " + result.stderr.strip()[-600:])
     return result.stdout
+
+
+def extract_enemy_hp(ocr_text: str, expected_max_hp: int) -> int:
+    """Parse *enemy* HP from the first OCR HP line in the native battle HUD.
+
+    RetroArch's low-resolution font can turn the '/' glyph into '7'
+    (17/17 -> 17717), and Vision occasionally recognizes H/P as Greek or
+    Cyrillic lookalikes. We require an explicit maximum HP to avoid treating
+    arbitrary digits or the player's HP as an enemy health value.
+    """
+    lookalikes = str.maketrans({
+        "Н": "H", "Р": "P", "Η": "H", "Ρ": "P",
+        "Ｈ": "H", "Ｐ": "P",
+    })
+    for original in ocr_text.splitlines():
+        line = original.upper().translate(lookalikes)
+        match = re.search(r"\bHP\b\s*:?\s*(\d[\d\s/|]*)", line)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        chunks = re.findall(r"\d+", value)
+        if len(chunks) >= 2:
+            current, maximum = int(chunks[0]), int(chunks[1])
+            if maximum == expected_max_hp and 0 <= current <= maximum:
+                return current
+            raise ValueError(
+                f"Enemy HP OCR did not match expected max {expected_max_hp}: {original!r}"
+            )
+        if len(chunks) == 1:
+            # OCR occasionally replaces the slash with another 7.
+            digits = chunks[0]
+            suffix = str(expected_max_hp)
+            if digits.endswith(suffix):
+                prefix = digits[:-len(suffix)]
+                candidates = [prefix]
+                if prefix.endswith("7"):
+                    candidates.append(prefix[:-1])
+                for candidate in candidates:
+                    if candidate and 0 <= int(candidate) <= expected_max_hp:
+                        return int(candidate)
+        raise ValueError(f"Could not decode enemy HP from OCR row: {original!r}")
+    raise ValueError("No enemy HP row found in battle screenshot OCR")
 
 
 class Runner:
@@ -444,6 +495,24 @@ class Runner:
             if difference < threshold:
                 raise AssertionError(f"Images did not change enough ({difference} < {threshold})")
             return f"screen changed {difference} average RGB units"
+        if action == "assert_hp_decreased":
+            # Prove a battle turn changed an actual HP counter rather than
+            # merely changing background animation or a menu highlight.
+            maximum = item["expected_max_hp"]
+            before = extract_enemy_hp(
+                recognize_text(self.images[item["before"]]), maximum
+            )
+            after = extract_enemy_hp(
+                recognize_text(self.images[item["after"]]), maximum
+            )
+            damage = before - after
+            required = item.get("min_damage", 1)
+            if damage < required:
+                raise AssertionError(
+                    f"Enemy HP did not decrease sufficiently: {before}/{maximum} "
+                    f"-> {after}/{maximum}, required damage >={required}"
+                )
+            return f"enemy HP decreased {before}/{maximum} -> {after}/{maximum} (-{damage})"
         if action == "assert_movement":
             # Distinguish camera/player movement from Bulbasaur idle animation,
             # changing lighting, or a title-card fade. Measure the latter first.
