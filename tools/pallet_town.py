@@ -203,6 +203,8 @@ def scene_source(geom: Geometry) -> str:
         '#include "scene.h"',
         '#include "room.h"',
         '#include "player.h"',
+        '#include "cutscene.h"',
+        '#include "cutscene_commands.h"',
         '#include "camera.h"',
         '#include "object.h"',
         '#include "sequence.h"',
@@ -235,6 +237,16 @@ def scene_source(geom: Geometry) -> str:
         f'ActorEntry gPalletPlayerSpawns[] = {{ {{ ACTOR_PLAYER, {{ {SPAWN[0]}, 0, {SPAWN[2]} }},',
         '    { 0, DEG_TO_BINANG(180.0f), 0 }, 0x0FFF } };',
         'Spawn gPalletEntrances[] = { { 0, 0 } };',
+        '/* Compatibility only: these Zelda cutscenes are still referenced by', 
+        ' * compiled but unreachable Zelda code and actor overlays. Never', 
+        ' * trigger them in Pallet Town. Minimal valid scripts preserve the', 
+        ' * upstream link contract without retaining Kokiri Forest assets. */',
+        'CutsceneData gKokiriForestDekuSproutPart3Cs[] = {',
+        '    CS_HEADER(0, 1), CS_END_OF_SCRIPT(),',
+        '};',
+        'CutsceneData gKokiriForestSariaGreetingCs[] = {',
+        '    CS_HEADER(0, 1), CS_END_OF_SCRIPT(),',
+        '};', '',
         'EnvLightSettings gPalletLights[4] = {',
     ]
     light = [
@@ -337,6 +349,37 @@ def room_source(geom: Geometry) -> str:
         '};', '',
     ]
     return '\n'.join(lines)
+
+
+def unused_room_source(index: int) -> str:
+    """Preserve OoT DMA room slots 1 and 2 without linking Kokiri textures.
+
+    The new Pallet scene exposes exactly one playable room: room 0. Original
+    Zelda spot04 rooms 1 and 2 referenced shared Kokiri scene textures.
+    Their ROM DMA slots are still required by the pinned linker and tables,
+    so replace their contents with tiny valid empty rooms rather than
+    leaving dangling Kokiri texture references or deleting DMA entries.
+    """
+    if index not in (1, 2):
+        raise ValueError("Only the two unused Kokiri room slots are replaceable")
+    name = f"gPalletEmptyRoom{index}"
+    return "\n".join([
+        "/* Empty compatibility room preserving the original spot04 DMA slot. */",
+        '#include "ultra64.h"',
+        '#include "scene.h"',
+        '#include "room.h"',
+        "",
+        f"RoomShapeNormal {name}Shape = {{",
+        "    ROOM_SHAPE_TYPE_NORMAL, 0, NULL, NULL,",
+        "};",
+        f"SceneCmd {name}Header[] = {{",
+        f"    SCENE_CMD_ROOM_SHAPE(&{name}Shape),",
+        "    SCENE_CMD_ECHO_SETTINGS(0),",
+        "    SCENE_CMD_ROOM_BEHAVIOR(0, 0, false, false),",
+        "    SCENE_CMD_END(),",
+        "};",
+        "",
+    ])
 
 
 def build():
