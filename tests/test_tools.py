@@ -36,6 +36,8 @@ class OverlayTests(unittest.TestCase):
             "src/code/z_game_dlftbls.c": '#include "setup_state.h"\n',
             "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
+            "spec/scenes_n64.inc": '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
+                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"\n',
             "include/tables/gamestate_table.h": 'DEFINE_GAMESTATE_INTERNAL(Setup, GAMESTATE_SETUP)\n',
             "spec/spec": '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
                          '    include "$(BUILD_DIR)/src/code/z_play.o"\n'
@@ -168,10 +170,11 @@ class OverlayTests(unittest.TestCase):
             self.assertIn(hook, code)
         spec = (self.engine / "spec/spec").read_text()
         self.assertIn("poke_oot.o", spec)
-        self.assertIn("poke_pallet_scene.o", spec)
-        self.assertIn("poke_pallet_room.o", spec)
-        self.assertNotIn("spot04/spot04_scene.o", spec)
-        self.assertNotIn("spot04/spot04_room_0.o", spec)
+        scene_spec = (self.engine / "spec/scenes_n64.inc").read_text()
+        self.assertIn("poke_pallet_scene.o", scene_spec)
+        self.assertIn("poke_pallet_room.o", scene_spec)
+        self.assertNotIn("spot04/spot04_scene.o", scene_spec)
+        self.assertNotIn("spot04/spot04_room_0.o", scene_spec)
         self.assertIn("SCENE_CMD_COL_HEADER", (self.engine / "src/code/poke_pallet_scene.c").read_text())
         self.assertIn("SCENE_CMD_ROOM_SHAPE", (self.engine / "src/code/poke_pallet_room.c").read_text())
         self.assertIn("poke_core.o", spec)
