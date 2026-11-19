@@ -12,7 +12,7 @@ STADIUM_SPECIES ?= 1
 export STADIUM_SPECIES
 export STADIUM_ROM
 
-.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-control-docker stadium-inspect stadium-export stadium-animated clean help
+.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help
 all: $(HOST)
 
 build:
@@ -78,6 +78,9 @@ stadium-export:
 stadium-animated:
 	$(PYTHON) tools/stadium_export.py --animated
 
+stadium-n64:
+	$(PYTHON) tools/stadium_n64.py
+
 clean:
 	rm -f build/poke-n64 build/test-core build/test-save build/test-core-sanitize build/test-save-sanitize
 
@@ -97,3 +100,4 @@ help:
 	@echo 'make stadium-inspect        Fingerprint local Stadium ROM'
 	@echo 'make stadium-export         Export static textured Stadium GLB'
 	@echo 'make stadium-animated       Export rigged Stadium GLB with idle and attack clips'
+	@echo 'make stadium-n64            Bake private Bulbasaur frames/textures into N64-compatible C'
