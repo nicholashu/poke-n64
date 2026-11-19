@@ -19,9 +19,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
     parser.add_argument("--require-mips", action="store_true")
+    parser.add_argument("--oot-conversion", action="store_true",
+                        help="check native PlayState total-conversion sources")
     args = parser.parse_args()
     engine = args.engine.resolve()
-    install(engine)
+    install(engine, boot_mode="oot" if args.oot_conversion else "poke")
     compiler = os.environ.get("MIPS_CC")
     if compiler and not shutil.which(compiler):
         sys.exit(f"MIPS_CC does not exist: {compiler}")
@@ -49,8 +51,12 @@ def main() -> None:
         flags += ["-EB", "-G0", "-march=vr4300", "-mfix4300", "-mabi=32", "-mno-abicalls", "-fno-PIC", "-c"]
     else:
         flags += ["-m32", "-fsyntax-only"]
-    sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_state.c",
-               "src/code/title_setup.c", "src/code/z_game_dlftbls.c", "src/code/graph.c"]
+    if args.oot_conversion:
+        sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_oot.c",
+                   "src/code/title_setup.c", "src/code/z_play.c"]
+    else:
+        sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_state.c",
+                   "src/code/title_setup.c", "src/code/z_game_dlftbls.c", "src/code/graph.c"]
     for source in sources:
         command = [compiler, *flags, source]
         if native:
