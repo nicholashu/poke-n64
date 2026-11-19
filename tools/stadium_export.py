@@ -392,6 +392,29 @@ def normalize_rom(data: bytes) -> bytes:
     raise StadiumExportError("Not an N64 ROM (.z64/.n64/.v64)")
 
 
+def probe_us10_model_archive(data: bytes) -> int | None:
+    """Check the published Stadium US 1.0 model-archive directory at 0x920000.
+
+    This is a structural probe, NOT proof that model/animation data in another
+    ROM revision uses the same addresses, skeletons or texture layouts.
+    """
+    off = 0x920000
+    if len(data) < off + 0x10:
+        return None
+    tag, reserved, total, count = struct.unpack_from(">4I", data, off)
+    if (tag & 0xFFFFFF00) != 0 or reserved != 0 or not (151 <= count <= 4096):
+        return None
+    records_end = off + 0x10 + count * 0x10
+    if records_end > len(data) or total < 0x10 + count * 0x10:
+        return None
+    for i in range(count):
+        start, size = struct.unpack_from(">2I", data, off + 0x10 + i * 0x10)
+        if size == 0 or start < 0x10 + count * 0x10 or (
+                off + start + size > len(data)):
+            return None
+    return count
+
+
 def rom_details(path: Path) -> tuple[bytes, dict]:
     if path.stat().st_size > 128 * 1024 * 1024:
         raise StadiumExportError("ROM exceeds 128 MiB safety limit")
@@ -399,7 +422,8 @@ def rom_details(path: Path) -> tuple[bytes, dict]:
     title = data[0x20:0x34].decode("ascii", "replace").strip("\x00 ")
     details = {"name": title, "revision": data[0x3f],
                "gameId": data[0x3c:0x3e].decode("ascii", "replace"),
-               "normalizedMd5": hashlib.md5(data).hexdigest()}
+               "normalizedMd5": hashlib.md5(data).hexdigest(),
+               "us10ModelArchiveRecords": probe_us10_model_archive(data)}
     if "STADIUM" not in title.upper() or "STADIUM 2" in title.upper():
         raise StadiumExportError(f"Not a Pokémon Stadium 1 ROM: {title!r}")
     return data, details
@@ -495,14 +519,19 @@ def main() -> None:
             rom_data, rom_info = rom_details(rom_path)
             print(f"Stadium ROM: {rom_info['name']} (Rev {rom_info['revision']})", flush=True)
             print(f"Normalized MD5: {rom_info['normalizedMd5']}", flush=True)
+            print("US 1.0 model-archive probe: " +
+                  (str(rom_info["us10ModelArchiveRecords"]) + " records at 0x920000"
+                   if rom_info["us10ModelArchiveRecords"] is not None
+                   else "not recognized at 0x920000"), flush=True)
             if rom_info["normalizedMd5"] != US10_MD5:
                 print("WARNING: Extractor was developed for Stadium US 1.0. " +
                       "This ROM revision is EXPERIMENTAL; output will be parsed and validated.",
                       file=sys.stderr, flush=True)
             if args.inspect_only:
                 return
-            if len(rom_data) < 0x920000 + 64:
-                raise StadiumExportError("ROM too small to contain expected Stadium model archive")
+            if rom_info["us10ModelArchiveRecords"] is None:
+                raise StadiumExportError("No valid Stadium US 1.0 model archive at 0x920000. "
+                                         "Rev 2 may use a different layout; no extraction attempted.")
             pack_path = args.output / f"{args.species:03d}" / "source.dsm"
             model_bytes = extract_pack(rom_path, args.species, pack_path)
         if args.inspect_only:
