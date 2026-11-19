@@ -34,7 +34,10 @@ static s32 room_for_scene(s32 scene) {
     for (i=0;i<INTRO_ROOM_COUNT;++i) if (sPokeSceneIds[i]==scene) return i;
     return -1;
 }
-s32 PokeOot_ImportedPallet(void) { return PokePalletNative_Enabled(); }
+/* A supplied Red/Blue ROM replaces Pallet Town's scene geometry and text
+ * data. It must not replace the five-room opening/story with the earlier
+ * isolated outdoor demo. That event runner remains available for tools. */
+s32 PokeOot_ImportedPallet(void) { return 0; }
 s32 PokeOot_IsScene(s32 scene) {
     return PokeOot_ImportedPallet() ? scene==SCENE_KOKIRI_FOREST : room_for_scene(scene)>=0;
 }
@@ -304,6 +307,48 @@ void PokeOot_Update(PlayState* play) {
     request_warp(play);
 }
 
+/* Prefer original dialogue extracted locally from the user-supplied
+ * Game Boy ROM for outdoor signs, residents and Oak's grass warning.
+ * The portable story remains responsible for Oak's escort and transitions.
+ * Only a 2x36-character view is exposed to the native GfxPrint UI. */
+static const char* intro_line( const PokeIntro* intro, const PokeGame* game, unsigned line) {
+    static char wrapped[2][37];
+    const char* source;
+    s32 textId=POKE_PALLET_TEXT_NONE;
+    unsigned index=0, row=0, column=0;
+    if (line>1 || intro->room!=INTRO_PALLET || !gPokePalletMap.enabled ||
+        gPokePalletMap.texts==NULL) return poke_intro_line(intro,game,line);
+    switch (intro->talk) {
+        case TALK_OAK_WARNING: textId=POKE_PALLET_TEXT_OAK_UNSAFE; break;
+        case TALK_GIRL: textId=POKE_PALLET_TEXT_GIRL; break;
+        case TALK_FISHER: textId=POKE_PALLET_TEXT_FISHER; break;
+        case TALK_RED_SIGN: textId=POKE_PALLET_TEXT_PLAYER_HOUSE_SIGN; break;
+        case TALK_BLUE_SIGN: textId=POKE_PALLET_TEXT_RIVAL_HOUSE_SIGN; break;
+        case TALK_TOWN_SIGN: textId=POKE_PALLET_TEXT_TOWN_SIGN; break;
+        case TALK_LAB_SIGN: textId=POKE_PALLET_TEXT_LAB_SIGN; break;
+        default: break;
+    }
+    if (textId==POKE_PALLET_TEXT_NONE) return poke_intro_line(intro,game,line);
+    source=gPokePalletMap.texts[textId];
+    if (source==NULL || source[0]=='\\0') return poke_intro_line(intro,game,line);
+    wrapped[0][0]=wrapped[1][0]='\\0';
+    /* Stable, bounded output: support original line endings and wrap after
+     * 36 characters without overrunning the N64 framebuffer text box. */
+    while (source[index]!='\\0' && index<POKE_PALLET_TEXT_LIMIT && row<2) {
+        char ch=source[index++];
+        if (ch=='\\r') continue;
+        if (ch=='\\n' || column==36) {
+            wrapped[row][column]='\\0';
+            ++row;column=0;
+            if (row>=2) break;
+            if (ch=='\\n') continue;
+        }
+        wrapped[row][column++]=ch;
+    }
+    if (row<2) wrapped[row][column]='\\0';
+    return wrapped[line];
+}
+
 static void human(PlayState* play,s32 kind,f32 x,f32 y,f32 z,s16 yaw,f32 gait) {
     GraphicsContext* gfx=play->state.gfxCtx;
     Matrix_Push(); Matrix_Translate(x,y,z,MTXMODE_NEW);
@@ -471,7 +516,7 @@ void PokeOot_Draw(PlayState* play) {
         if (s->talk) {
             GfxPrint_SetPosPx(&printer,16,185);GfxPrint_Printf(&printer,"%.35s",poke_intro_speaker(s,g));
             GfxPrint_SetColor(&printer,244,239,219,255);
-            for(i=0;i<2;++i) { GfxPrint_SetPosPx(&printer,16,201+i*12);GfxPrint_Printf(&printer,"%.36s",poke_intro_line(s,g,(unsigned)i)); }
+            for(i=0;i<2;++i) { GfxPrint_SetPosPx(&printer,16,201+i*12);GfxPrint_Printf(&printer,"%.36s",intro_line(s,g,(unsigned)i)); }
         } else {
             GfxPrint_SetPosPx(&printer,16,218);GfxPrint_SetColor(&printer,244,239,219,255);
             GfxPrint_Printf(&printer,"%.36s",poke_intro_objective(s));
