@@ -34,6 +34,7 @@ typedef struct {
     u8 attackFramesRemaining;
     s16 battleCameraId;
     Vec3f battleAnchor;
+    Vec3f fieldBulbasaurPos;
     u16 previousTurns;
 } PokeOotRuntime;
 
@@ -68,12 +69,14 @@ static void PokeOot_EnterBattle(PlayState* play, Player* player) {
     id = Play_CreateSubCamera(play);
     sPokeOot.battleCameraId = id;
     if (id != CAM_ID_NONE) {
+        /* Stage opponent and player on either side of this axis. Framing
+         * uses a forward-facing broadcast camera instead of Link's camera. */
         at.x = sPokeOot.battleAnchor.x;
-        at.y = sPokeOot.battleAnchor.y + 65.0f;
-        at.z = sPokeOot.battleAnchor.z + 70.0f;
-        eye.x = sPokeOot.battleAnchor.x + 235.0f;
-        eye.y = sPokeOot.battleAnchor.y + 165.0f;
-        eye.z = sPokeOot.battleAnchor.z + 385.0f;
+        at.y = sPokeOot.battleAnchor.y + 75.0f;
+        at.z = sPokeOot.battleAnchor.z + 95.0f;
+        eye.x = sPokeOot.battleAnchor.x + 10.0f;
+        eye.y = sPokeOot.battleAnchor.y + 176.0f;
+        eye.z = sPokeOot.battleAnchor.z + 540.0f;
         Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
         Play_ChangeCameraStatus(play, id, CAM_STAT_ACTIVE);
         Play_SetCameraAtEye(play, id, &at, &eye);
@@ -104,6 +107,11 @@ void PokeOot_OnSceneEnter(PlayState* play) {
     sPokeOot.havePrevious = 0;
     sPokeOot.lastScene = play->sceneId;
     sPokeOot.battleCameraId = CAM_ID_NONE;
+    /* Stable original Pallet landmark, no longer parented to Link's
+     * continuously changing position or his facing direction. */
+    sPokeOot.fieldBulbasaurPos.x = 160.0f;
+    sPokeOot.fieldBulbasaurPos.y = 0.0f;
+    sPokeOot.fieldBulbasaurPos.z = 535.0f;
 }
 
 /* The OoT player actor, not poke_walk(), owns overworld movement and walls.
@@ -199,18 +207,19 @@ static void PokeOot_DrawStadiumModel(PlayState* play) {
     if (!PokeStadium_AssetAvailable() || player == NULL) return;
 
     if (PokeOot_BattleActive()) {
-        x = sPokeOot.battleAnchor.x - 100.0f;
-        z = sPokeOot.battleAnchor.z + 145.0f;
+        x = sPokeOot.battleAnchor.x - 145.0f;
+        z = sPokeOot.battleAnchor.z + 175.0f;
     } else {
-        x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 165.0f;
-        z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 165.0f;
+        x = sPokeOot.fieldBulbasaurPos.x;
+        z = sPokeOot.fieldBulbasaurPos.z;
     }
 
     View_Apply(&play->view, VIEW_ALL);
     Matrix_Push();
-    Matrix_Translate(x, player->actor.world.pos.y, z, MTXMODE_NEW);
-    Matrix_RotateY(PokeOot_BattleActive() ? 1.5707963f :
-                   (f32)player->actor.shape.rot.y * (3.14159265f / 32768.0f),
+    Matrix_Translate(x, PokeOot_BattleActive() ? sPokeOot.battleAnchor.y :
+                     sPokeOot.fieldBulbasaurPos.y, z, MTXMODE_NEW);
+    /* Face the enemy in battle. In the field, face toward the town path. */
+    Matrix_RotateY(PokeOot_BattleActive() ? 1.5707963f : 3.14159265f,
                    MTXMODE_APPLY);
 
     OPEN_DISPS(gfx);
@@ -244,9 +253,9 @@ static void PokeOot_DrawWildProxy(PlayState* play) {
         vertices[i].v.cn[3] = 255;
     }
     Matrix_Push();
-    Matrix_Translate(sPokeOot.battleAnchor.x + 130.0f,
+    Matrix_Translate(sPokeOot.battleAnchor.x + 145.0f,
                      sPokeOot.battleAnchor.y,
-                     sPokeOot.battleAnchor.z + 10.0f, MTXMODE_NEW);
+                     sPokeOot.battleAnchor.z + 5.0f, MTXMODE_NEW);
     OPEN_DISPS(gfx);
     MATRIX_FINALIZE_AND_LOAD(POLY_OPA_DISP++, gfx);
     gDPPipeSync(POLY_OPA_DISP++);
@@ -331,7 +340,7 @@ void PokeOot_Draw(PlayState* play) {
         GfxPrint_Printf(&printer, "%.35s", game->log[POKE_LOG_LINES - 1]);
     } else {
         GfxPrint_SetPosPx(&printer, 16, 13);
-        GfxPrint_Printf(&printer, "POKEMON RED 64 / OOT PLAYSTATE");
+        GfxPrint_Printf(&printer, "PALLET TOWN / KANTO");
         GfxPrint_SetColor(&printer, 244, 239, 219, 255);
         GfxPrint_SetPosPx(&printer, 16, 25);
         if (!(game->flags & FLAG_STARTER)) {
