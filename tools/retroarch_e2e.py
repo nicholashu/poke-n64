@@ -47,7 +47,7 @@ FAULT_PHRASES = (
 ACTIONS = frozenset({
     "wait", "tap", "press", "release", "release_all", "stick", "screenshot",
     "assert_visible", "assert_changed", "assert_movement", "assert_text", "assert_no_fault",
-    "assert_status", "pause", "resume", "frames", "key_hold",
+    "assert_status", "pause", "resume", "frames", "key_hold", "key_chord",
 })
 
 
@@ -126,6 +126,16 @@ def validate_scenario(raw: object) -> dict:
             if (not isinstance(duration, (int, float)) or isinstance(duration, bool)
                     or not 0 < duration <= 90):
                 raise ValueError(f"Step {n}: key_hold seconds must be in (0,90]")
+        if action == "key_chord":
+            keys = step.get("keycodes")
+            if (not isinstance(keys, list) or not 1 <= len(keys) <= 6 or
+                    any(type(key) is not int or not 0 <= key <= 127 for key in keys) or
+                    len(set(keys)) != len(keys)):
+                raise ValueError(f"Step {n}: key_chord requires 1 to 6 unique macOS keycodes (0..127)")
+            duration = step.get("seconds")
+            if (not isinstance(duration, (int, float)) or isinstance(duration, bool)
+                    or not 0 < duration <= 90):
+                raise ValueError(f"Step {n}: key_chord seconds must be in (0,90]")
         if action == "frames":
             if type(step.get("count")) is not int or not 1 <= step["count"] <= 600:
                 raise ValueError(f"Step {n}: count must be 1 to 600")
@@ -396,21 +406,24 @@ class Runner:
             remote.stick(item["stick"], 0, 0)
             time.sleep(0.06)
             return f"moved {item['stick']} stick ({item['x']}, {item['y']})"
-        if action == "key_hold":
+        if action in ("key_hold", "key_chord"):
             # The network Remote RetroPad analog path can be unreliable on
-            # this ParaLLEl build. Post the keyboard key to the exact owned
-            # emulator PID; leave global input bindings untouched.
+            # this ParaLLEl build. Post keyboard events to the exact owned
+            # emulator PID; leave global input bindings untouched. The
+            # Launcher Edition's independent C map uses E+Left for L+C-left
+            # and E+R+Shift for L+R+B (the N64 controls, not RetroPad names).
             if self.process is None or self.process.poll() is not None:
                 raise RuntimeError("Test-owned RetroArch process is not running")
             helper = ROOT / "tools/retroarch_keys.swift"
             if not helper.is_file():
                 raise RuntimeError(f"Missing keyboard input helper: {helper}")
+            keys = ([item["keycode"]] if action == "key_hold" else item["keycodes"])
             subprocess.run([
                 "swift", str(helper), "hold", str(self.process.pid),
-                str(item["seconds"]), str(item["keycode"]),
+                str(item["seconds"]), *(str(key) for key in keys),
             ], timeout=item["seconds"] + 25, check=True)
-            time.sleep(0.10)
-            return f"held macOS keycode {item['keycode']} for {item['seconds']}s"
+            time.sleep(0.12)
+            return f"held macOS keycodes {keys} for {item['seconds']}s"
         if action == "screenshot":
             path = self.capture(item["name"])
             return f"captured {path.relative_to(self.session)}"
