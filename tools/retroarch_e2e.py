@@ -47,7 +47,7 @@ FAULT_PHRASES = (
 ACTIONS = frozenset({
     "wait", "tap", "press", "release", "release_all", "stick", "screenshot",
     "assert_visible", "assert_changed", "assert_movement", "assert_text", "assert_no_fault",
-    "assert_status", "pause", "resume", "frames",
+    "assert_status", "pause", "resume", "frames", "key_hold",
 })
 
 
@@ -119,6 +119,13 @@ def validate_scenario(raw: object) -> dict:
                 value = step.get(axis)
                 if type(value) is not int or not -32768 <= value <= 32767:
                     raise ValueError(f"Step {n}: invalid {axis} axis")
+        if action == "key_hold":
+            if type(step.get("keycode")) is not int or not 0 <= step["keycode"] <= 127:
+                raise ValueError(f"Step {n}: key_hold requires macOS virtual keycode (0..127)")
+            duration = step.get("seconds")
+            if (not isinstance(duration, (int, float)) or isinstance(duration, bool)
+                    or not 0 < duration <= 90):
+                raise ValueError(f"Step {n}: key_hold seconds must be in (0,90]")
         if action == "frames":
             if type(step.get("count")) is not int or not 1 <= step["count"] <= 600:
                 raise ValueError(f"Step {n}: count must be 1 to 600")
@@ -389,6 +396,21 @@ class Runner:
             remote.stick(item["stick"], 0, 0)
             time.sleep(0.06)
             return f"moved {item['stick']} stick ({item['x']}, {item['y']})"
+        if action == "key_hold":
+            # The network Remote RetroPad analog path can be unreliable on
+            # this ParaLLEl build. Post the keyboard key to the exact owned
+            # emulator PID; leave global input bindings untouched.
+            if self.process is None or self.process.poll() is not None:
+                raise RuntimeError("Test-owned RetroArch process is not running")
+            helper = ROOT / "tools/retroarch_keys.swift"
+            if not helper.is_file():
+                raise RuntimeError(f"Missing keyboard input helper: {helper}")
+            subprocess.run([
+                "swift", str(helper), "hold", str(self.process.pid),
+                str(item["seconds"]), str(item["keycode"]),
+            ], timeout=item["seconds"] + 25, check=True)
+            time.sleep(0.10)
+            return f"held macOS keycode {item['keycode']} for {item['seconds']}s"
         if action == "screenshot":
             path = self.capture(item["name"])
             return f"captured {path.relative_to(self.session)}"
