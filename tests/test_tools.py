@@ -189,13 +189,18 @@ class OverlayTests(unittest.TestCase):
         for obj in ("poke_intro.o","poke_world.o","poke_red_actor.o","poke_red_mesh.o"):
             self.assertIn(obj,spec)
         self.assertIn("PokeOot_ResolveSpawn(sceneId, spawn)",code)
+        native = (ROOT / "native/oot_conversion.c").read_text()
+        self.assertNotIn("eye.y=at.y+550",native)
+        self.assertNotIn("if (room!=INTRO_PALLET)",native)
+        self.assertIn("CAM_ID_MAIN",native)
         player=(self.engine / "src/code/z_player_lib.c").read_text()
         self.assertEqual(player.count("PokeRed_HideLinkLimb(play, dList);"),2)
         for name in bootstrap.ORDER[1:]:
             segment=bootstrap.ROOMS[name]["segment"]
             self.assertIn("poke_"+segment+"_scene_header.o",(self.engine/"spec/scenes_n64.inc").read_text())
         camera = (self.engine / "src/code/z_camera.c").read_text()
-        self.assertIn("sceneId == SCENE_KOKIRI_FOREST", camera)
+        self.assertIn("PokeOot_IsScene(camera->play->sceneId)", camera)
+        self.assertIn('#include "poke_oot.h"', camera)
         self.assertIn("camera->setting <= CAM_SET_NONE", camera)
         self.assertIn("camera->mode = CAM_MODE_NORMAL", camera)
         scene_table = (self.engine / "include/tables/scene_table.h").read_text()
