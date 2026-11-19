@@ -92,7 +92,7 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("static u16 ReadFieldKeys(PokeState* self, const Input* input)", runtime)
         self.assertIn("static void FieldCamera(PokeState* self, Vec3f* eye, Vec3f* at)", runtime)
         self.assertIn("static void StadiumCamera(PokeState* self, Vec3f* eye, Vec3f* at)", runtime)
-        self.assertIn("if (self->game.mode == MODE_FIELD) keys = ReadFieldKeys", runtime)
+        self.assertIn("keys = ReadFieldKeys(self, &state->input[0]);", runtime)
         self.assertIn("if (held & BTN_Z)", runtime)
         self.assertIn("if (held & BTN_CLEFT)", runtime)
         self.assertIn("if (battle) {", runtime)
