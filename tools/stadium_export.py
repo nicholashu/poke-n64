@@ -195,16 +195,24 @@ def read_dsm(data: bytes) -> dict:
         aux = r.i16()
         if frames == 0 or frames > 10000:
             raise StadiumExportError(f"Invalid animation duration for {name}")
-        for _ in range(bone_count):
+        tracks = []
+        for bone in range(bone_count):
             if not r.u8():
+                tracks.append(None)
                 continue
+            components = []
             for j in range(9):
                 kind = r.u8()
                 if kind not in (0, 1):
                     raise StadiumExportError("Unrecognized DSM3 animation track type")
-                r.take((4 if j >= 6 else 2) * (1 if kind == 0 else frames))
+                read = r.fixed if j >= 6 else r.i16
+                if kind == 0:
+                    components.append(read())
+                else:
+                    components.append([read() for _ in range(frames)])
+            tracks.append(components)
         animations.append({"name": name, "frames": frames,
-                           "loopStart": loop_start, "aux": aux})
+                           "loopStart": loop_start, "aux": aux, "tracks": tracks})
     for _ in range(aux_count):
         frames, loop_start, channels = r.unpack("3H")
         for _ in range(channels):
@@ -482,7 +490,9 @@ def save_export(model: dict, directory: Path, target_height: float, rom: dict | 
         "vertices": sum(len(p["vertices"]) for p in model["primitives"]),
         "triangles": sum(len(p["indices"]) // 3 for p in model["primitives"]),
         "textures": [{"width": w, "height": h} for w, h, _ in model["textures"]],
-        "animations": model["animations"], "contexts": model["contexts"],
+        "animations": [{key: value for key, value in anim.items() if key != "tracks"}
+                       for anim in model["animations"]],
+        "contexts": model["contexts"],
         "moveAnimations": model["moveAnimations"],
         "staticPose": model["staticPose"],
         "exportedGlbType": "bind-pose rigid-baked mesh; NO animation clips or skin",
