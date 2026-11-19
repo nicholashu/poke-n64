@@ -118,6 +118,13 @@ def main() -> None:
     label = "poke-n64-control" if args.control_boot else "poke-n64"
     target = ROOT / f"build/{label}.z64"
     shutil.copyfile(generated, target)
+    # The ROM must be independently boot-checksummed before creating the patch.
+    # Upstream already ships the ipl3checksum dependency in its virtualenv.
+    inspector = ROOT / "tools/inspect_rom.py"
+    python = engine / ".venv/bin/python3"
+    if not python.is_file():
+        raise RuntimeError(f"Engine Python environment missing: {python}")
+    subprocess.run([str(python), str(inspector), str(target)], check=True)
     flips = engine / "tools/Flips/flips"
     patch = ROOT / f"build/{label}.bps"
     if not flips.is_file():
