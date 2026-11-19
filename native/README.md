@@ -12,7 +12,7 @@ The runtime is not a PC port, and the host harness is not the ROM.
 
 ## Native implementation
 
-On power-up, `Poke_Init` enters a simple **blue framebuffer-clear probe** before the world renderer runs. Press A to load SRAM and enter the game, or Z+A to enter without the SRAM read. This isolates early engine boot, persistence and scene drawing in that order. A black screen before the blue probe is not evidence of an unsupported Expansion Pak. The probe deliberately uses no imported assets, HUD font or geometry, so it can still appear when those systems fail.
+On power-up, `Poke_Init` enters a simple **blue framebuffer-clear probe** before the world renderer runs. Matrix, camera, letterbox and game-state initialization are also deferred until after the first A press, making the blue frame a smaller, better-isolated startup test. Press A to load SRAM and enter the game, or Z+A to enter without the SRAM read. This isolates early engine boot, persistence and scene drawing in that order. A black screen before the blue probe is not evidence of an unsupported Expansion Pak. The probe deliberately uses no imported assets, HUD font or geometry, so it can still appear when those systems fail.
 
 
 - A perspective tracking camera renders a small Pallet/Route 1 layout.
