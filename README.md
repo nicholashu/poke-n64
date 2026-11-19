@@ -10,10 +10,10 @@ The 3D models are original, simple block models. Stadium/Snap models and animati
 
 | System | In this slice |
 | --- | --- |
-| Exploration | Bounded 20 × 24 test map, buildings, trees, collision, elevated tracking camera in native code |
+| Exploration | Bounded 20 × 24 test map, buildings, trees, collision, OoT-style behind-Red chase camera and camera-relative controls |
 | Starter | Oak interaction; Bulbasaur, Charmander or Squirtle at level 5 |
 | Wild encounters | Pidgey and Rattata at levels 2–4; encounter rolls depend on actual movement in grass |
-| Battles | Fight / Bag / Party / Run, speed order, accuracy, HP, PP, Attack/Defense stages, type effectiveness, STAB and simple critical hits |
+| Battles | Stadium-style separate 3D arena camera, idle bob and compact HP/command panels; Fight / Bag / Party / Run, speed order, accuracy, HP, PP, Attack/Defense stages, type effectiveness, STAB and simple critical hits |
 | Moves | Tackle, Growl, Scratch, Tail Whip, Gust, Vine Whip, Ember, Water Gun; Struggle when PP is exhausted |
 | Progression | Experience, level increases and a starter elemental move at level 7 |
 | Catching | Poke Balls, failure/success turns, six-member party and selected lead |
@@ -171,12 +171,14 @@ The previous ROM build's boot status was unverified; this is a diagnostic instru
 
 | Controller | Action |
 | --- | --- |
-| Stick or D-pad | Walk; up/down select a menu entry |
+| Stick or D-pad | Camera-relative movement in the overworld; up/down to select menus |\n| Z | Recenter chase camera behind Red in the overworld |\n| C-left / C-right | Orbit the overworld camera (temporary prototype controls) |
 | A | Talk / confirm |
 | B | Back |
 | Start | Field menu with Party, Save, Load and Continue |
 
-The native state loads a valid save at boot. Saving is explicit. A forced replacement after fainting must select a healthy party member.
+The overworld camera now sits behind Red at roughly shoulder height, tracks position smoothly and eases towards his facing after he stops. It uses basic prototype tile collision to avoid passing through buildings. Battles switch to an independent Pokémon Stadium-inspired arena presentation, with both Pokémon visible, gentle camera motion, idle bob and status/command panels. This is a **presentation prototype**, not a Stadium asset import. Original Stadium Pokémon models, move animation sequences, trainer throwing animations and stadium backdrops are still future work.
+
+The native state loads a valid save after leaving the diagnostic boot screen. Saving is explicit. A forced replacement after fainting must select a healthy party member.
 
 ## Verify the code
 
