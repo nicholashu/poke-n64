@@ -46,7 +46,7 @@ FAULT_PHRASES = (
 )
 ACTIONS = frozenset({
     "wait", "tap", "press", "release", "release_all", "stick", "screenshot",
-    "assert_visible", "assert_changed", "assert_text", "assert_no_fault",
+    "assert_visible", "assert_changed", "assert_movement", "assert_text", "assert_no_fault",
     "assert_status", "pause", "resume", "frames",
 })
 
@@ -133,6 +133,15 @@ def validate_scenario(raw: object) -> dict:
         if action == "assert_changed":
             if step.get("before") not in known_images or step.get("after") not in known_images:
                 raise ValueError(f"Step {n}: both screenshots must exist before diff")
+        if action == "assert_movement":
+            if any(step.get(key) not in known_images for key in ("idle_before", "before", "after")):
+                raise ValueError(f"Step {n}: three screenshots must exist before movement assertion")
+            ratio = step.get("ratio", 1.8)
+            threshold = step.get("min_difference", 8)
+            if not isinstance(ratio, (int, float)) or ratio <= 1 or ratio > 10:
+                raise ValueError(f"Step {n}: movement ratio must be between 1 and 10")
+            if not isinstance(threshold, (int, float)) or threshold < 0 or threshold > 255:
+                raise ValueError(f"Step {n}: movement min_difference outside 0-255")
         if action == "assert_text" and (
             not isinstance(step.get("contains"), str) or not step["contains"].strip()
         ):
@@ -395,6 +404,18 @@ class Runner:
             if difference < threshold:
                 raise AssertionError(f"Images did not change enough ({difference} < {threshold})")
             return f"screen changed {difference} average RGB units"
+        if action == "assert_movement":
+            # Distinguish camera/player movement from Bulbasaur idle animation,
+            # changing lighting, or a title-card fade. Measure the latter first.
+            idle = image_difference(self.images[item["idle_before"]], self.images[item["before"]])
+            moving = image_difference(self.images[item["before"]], self.images[item["after"]])
+            required = max(item.get("min_difference", 8), idle * item.get("ratio", 1.8))
+            if moving < required:
+                raise AssertionError(
+                    f"No clear movement: moving difference {moving}, idle difference "
+                    f"{idle}, required >={required:.2f}"
+                )
+            return f"movement confirmed: {moving} RGB units versus {idle} idle"
         if action in ("assert_no_fault", "assert_text"):
             visible = recognize_text(self.images[item["image"]])
             if action == "assert_text":
