@@ -3,6 +3,6 @@
 const PokePalletMap gPokePalletMap = { 0 };
 #include "poke_intro.h"
 const unsigned gPokeOpeningTextEnabled = 0;
-const char* const gPokeOpeningTalks[TALK_PC_FULL + 1] = { 0 };
+const char* const gPokeOpeningTalks[TALK_LAB_GIRL + 1] = { 0 };
 const char* const gPokeOpeningStarters[3] = { 0 };
 const char* const gPokeOpeningResults[2] = { 0 };
