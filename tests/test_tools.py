@@ -36,6 +36,8 @@ class OverlayTests(unittest.TestCase):
             "src/code/z_game_dlftbls.c": '#include "setup_state.h"\n',
             "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
+            "src/code/z_camera.c": '    if (sOOBTimer < 200) {\n'
+                                   '        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);\n',
             "include/tables/scene_table.h": 'DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST, 0, 0)\n',
             "spec/scenes_n64.inc": '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
                                    '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"\n'
@@ -173,6 +175,10 @@ class OverlayTests(unittest.TestCase):
             self.assertIn(hook, code)
         spec = (self.engine / "spec/spec").read_text()
         self.assertIn("poke_oot.o", spec)
+        camera = (self.engine / "src/code/z_camera.c").read_text()
+        self.assertIn("sceneId == SCENE_KOKIRI_FOREST", camera)
+        self.assertIn("camera->setting <= CAM_SET_NONE", camera)
+        self.assertIn("camera->mode = CAM_MODE_NORMAL", camera)
         scene_table = (self.engine / "include/tables/scene_table.h").read_text()
         self.assertIn("SCENE_KOKIRI_FOREST, SDC_DEFAULT", scene_table)
         self.assertNotIn("SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST", scene_table)
