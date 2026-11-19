@@ -53,7 +53,10 @@ def main() -> None:
         flags += ["-m32", "-fsyntax-only"]
     if args.oot_conversion:
         sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_oot.c",
-                   "src/code/poke_stadium_asset.c", "src/code/poke_pallet_scene.c",
+                   "src/code/poke_stadium_asset.c",
+                   "src/code/poke_pallet_scene_header.c",
+                   "src/code/poke_pallet_scene.c",
+                   "src/code/poke_pallet_room_header.c",
                    "src/code/poke_pallet_room.c",
                    "src/code/poke_pallet_unused_room_1.c",
                    "src/code/poke_pallet_unused_room_2.c",
