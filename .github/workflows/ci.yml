@@ -32,6 +32,8 @@ jobs:
           sudo apt-get install -y gcc-mips-linux-gnu binutils-mips-linux-gnu
       - name: Compile real native objects and boot hooks
         run: python3 tools/check_native.py --require-mips
+      - name: Compile PlayState total-conversion integration
+        run: python3 tools/check_native.py --require-mips --oot-conversion --engine build/engine-oot
       - name: Check overlay and ROM input safeguards
         run: python3 tests/test_tools.py
 
@@ -51,3 +53,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the image, host tools and six native objects
         run: make check-native-docker
+      - name: Check the native OoT PlayState conversion
+        run: make check-native-oot-docker
