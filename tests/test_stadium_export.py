@@ -137,6 +137,19 @@ class StadiumExporterTests(unittest.TestCase):
             self.assertEqual(details["revision"], 2)
             self.assertNotEqual(details["normalizedMd5"], stadium.US10_MD5)
 
+    def test_us10_archive_probe_detects_bad_offset_without_ROM_assets(self):
+        off = 0x920000
+        count = 151
+        table_size = 0x10 + count * 0x10
+        source = bytearray(off + table_size + count * 16)
+        struct.pack_into(">4I", source, off, 0, 0, table_size + count * 16, count)
+        for i in range(count):
+            struct.pack_into(">2I", source, off + 0x10 + i * 0x10,
+                             table_size + i * 16, 16)
+        self.assertEqual(stadium.probe_us10_model_archive(bytes(source)), 151)
+        source[off + 0x10 + 4:off + 0x10 + 8] = (0xffffffff).to_bytes(4, "big")
+        self.assertIsNone(stadium.probe_us10_model_archive(bytes(source)))
+
     def test_bone_cycle_rejected(self):
         bones = [
             {"parent": 1, "t": (0, 0, 0), "r": (0, 0, 0), "s": (1, 1, 1)},
