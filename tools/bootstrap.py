@@ -53,6 +53,24 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
     if boot_mode not in ("poke", "control"):
         raise ValueError("Unknown boot mode")
     ensure_checkout(engine)
+    if boot_mode == "control":
+        # A real baseline means *zero* Pokémon source, linker or header edits.
+        # Earlier 'control' builds retained the custom game state and were
+        # therefore unsuitable for isolating early boot failures.
+        if (engine / MANIFEST).exists():
+            raise RuntimeError(
+                f"Control checkout {engine} already contains a Pokémon overlay. "
+                "Use a fresh engine directory for the pristine upstream baseline."
+            )
+        changed = run("git", "status", "--porcelain", "--untracked-files=no",
+                      cwd=engine, capture=True)
+        if changed:
+            raise RuntimeError(
+                f"Control checkout {engine} has modified tracked files. "
+                "Use a fresh engine directory; the existing checkout is not touched."
+            )
+        print(f"Verified clean upstream HackerOoT checkout at {engine}.")
+        return
     old_manifest_path = engine / MANIFEST
     old_manifest = json.loads(old_manifest_path.read_text()) if old_manifest_path.exists() else {}
     original: dict[str, bytes] = {}
