@@ -89,6 +89,17 @@ class OverlayTests(unittest.TestCase):
         self.assertNotIn("self->drawBoxes = 0;", runtime.split("static void DrawWorld", 1)[1].split("static void Panel", 1)[0])
         self.assertIn("if (v == NULL) return;", runtime)
 
+    def test_control_boot_keeps_stock_transition_and_different_game_id(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            bootstrap.install(self.engine, boot_mode="control")
+        transition = (self.engine / "src/code/title_setup.c").read_text()
+        self.assertIn("SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);", transition)
+        self.assertNotIn("SET_NEXT_GAMESTATE(&this->state, Poke_Init, PokeState);", transition)
+        header = (self.engine / "src/makerom/rom_header.s").read_text()
+        self.assertIn('ROM_NAME("POKE N64 CONTROL")', header)
+        self.assertIn('GAME_ID("PC")', header)
+        self.assertIn("poke_state.o", (self.engine / "spec/spec").read_text())
+
     def test_refreshes_own_sources_but_keeps_unrelated_files(self) -> None:
         self.install()
         untouched = self.engine / "notes.txt"
