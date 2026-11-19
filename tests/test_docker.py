@@ -151,8 +151,9 @@ class DockerBuildTests(unittest.TestCase):
             docker_rom.run_in_docker(self.base, 2, oot_conversion=True)
         build, launch = [call.args[0] for call in self.run.call_args_list]
         self.assertIn("--oot-conversion", launch)
-        self.assertEqual("/project/build/docker-engine-arm64-oot",
-                         launch[launch.index("--engine") + 1])
+        # The mocked Docker daemon can be AMD64 on Linux or ARM64 on macOS.
+        self.assertTrue(launch[launch.index("--engine") + 1].endswith("-oot"))
+        self.assertIn("--engine", launch)
         self.assertIn("poke-n64-oot.z64", output.getvalue())
 
     def test_oot_toolchain_compiles_playstate_adapter_not_legacy_state(self) -> None:
