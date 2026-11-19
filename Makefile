@@ -9,7 +9,7 @@ HOST = build/poke-n64
 # Export paths verbatim rather than interpolating filenames into a shell command.
 export POKE_N64_ROM := $(ROM)
 
-.PHONY: all play test sanitize check-native check-native-docker check-rom engine rom rom-docker clean help
+.PHONY: all play test sanitize check-native check-native-docker check-rom engine rom rom-docker rom-control-docker clean help
 all: $(HOST)
 
 build:
@@ -57,6 +57,9 @@ rom:
 rom-docker:
 	$(PYTHON) tools/docker_rom.py
 
+rom-control-docker:
+	$(PYTHON) tools/docker_rom.py --control-boot
+
 clean:
 	rm -f build/poke-n64 build/test-core build/test-save build/test-core-sanitize build/test-save-sanitize
 
@@ -70,3 +73,4 @@ help:
 	@echo 'make rom                   Detect the matching Zelda image in roms/ and build'
 	@echo 'make rom ROM=/path/oot.z64  Build native ROM using your OoT NTSC 1.2 dump'
 	@echo 'make rom-docker            Build in Docker; recommended on macOS'
+	@echo 'make rom-control-docker    Build stock-boot diagnostic ROM'
