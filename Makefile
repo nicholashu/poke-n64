@@ -12,7 +12,7 @@ STADIUM_SPECIES ?= 1
 export STADIUM_SPECIES
 export STADIUM_ROM
 
-.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help
+.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-oot-play play-oot rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help
 all: $(HOST)
 
 build:
@@ -66,6 +66,14 @@ rom-docker:
 rom-oot-docker:
 	$(PYTHON) tools/docker_rom.py --oot-conversion
 
+# Always launch with unique, empty cartridge-save and savestate directories.
+play-oot:
+	$(PYTHON) tools/play_oot.py
+
+# One command to rebuild and play, with clean emulator state.
+rom-oot-play: rom-oot-docker
+	$(PYTHON) tools/play_oot.py
+
 rom-control-docker:
 	$(PYTHON) tools/docker_rom.py --control-boot
 
@@ -95,6 +103,8 @@ help:
 	@echo 'make rom ROM=/path/oot.z64  Build native ROM using your OoT NTSC 1.2 dump'
 	@echo 'make rom-docker            Build original standalone Pokémon prototype'
 	@echo 'make rom-oot-docker        Build Pokémon total conversion on native OoT PlayState'
+	@echo 'make play-oot              Launch built OoT ROM with fresh SRAM/savestate dirs'
+	@echo 'make rom-oot-play          Build then clean-launch Pokémon in ParaLLEl N64'
 	@echo 'make check-native-oot-docker Check native OoT integration without a ROM'
 	@echo 'make rom-control-docker    Build stock-boot diagnostic ROM'
 	@echo 'make stadium-inspect        Fingerprint local Stadium ROM'
