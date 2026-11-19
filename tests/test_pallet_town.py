@@ -70,6 +70,34 @@ class PalletTownTests(unittest.TestCase):
         self.assertNotIn("spot04_room_1", scene+room)
         self.assertNotIn("spot04_scenePathList", scene+room)
 
+    def test_scene_and_room_headers_are_separate_linker_objects(self):
+        scene_header, scene_body, room_header, room_body, metadata = (
+            pallet_town.build_segments()
+        )
+        self.assertEqual(metadata["landmarks"], [
+            "Red's house", "Rival's house", "Professor Oak's laboratory"
+        ])
+        for header, body, name in (
+            (scene_header, scene_body, "gPalletSceneHeader"),
+            (room_header, room_body, "gPalletRoomHeader"),
+        ):
+            self.assertEqual(header.count(f"SceneCmd {name}[] ="), 1)
+            self.assertNotIn(f"SceneCmd {name}[] =", body)
+            self.assertIn("SCENE_CMD_END()", header)
+        self.assertIn("SCENE_CMD_COL_HEADER", scene_header)
+        self.assertIn("gPalletCollision", scene_body)
+        self.assertIn("SCENE_CMD_ROOM_SHAPE", room_header)
+        self.assertIn("gPalletWorldDl", room_body)
+        self.assertIn("gsSPVertex", room_body)
+
+    def test_header_split_rejects_absent_or_duplicate_headers(self):
+        with self.assertRaisesRegex(ValueError, "Expected one"):
+            pallet_town.split_segment_header("int a = 0;", "missing")
+        with self.assertRaisesRegex(ValueError, "Expected one"):
+            pallet_town.split_segment_header(
+                "SceneCmd x[] = {};\nSceneCmd x[] = {};", "x"
+            )
+
     def test_legacy_room_dma_slots_are_minimal_self_contained_rooms(self):
         for index in (1, 2):
             source = pallet_town.unused_room_source(index)
