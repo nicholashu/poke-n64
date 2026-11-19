@@ -70,6 +70,22 @@ class ScenarioTests(unittest.TestCase):
                     {"action": "wait", "seconds": bad},
                 ]})
 
+    def test_key_hold_requires_valid_keycode_and_bounded_duration(self):
+        good = {"name": "key", "steps": [
+            {"action": "key_hold", "keycode": 13, "seconds": 2.5},
+        ]}
+        self.assertEqual(e2e.validate_scenario(good)["steps"][0]["keycode"], 13)
+        for code in (-1, 128, "13", None, True):
+            with self.assertRaisesRegex(ValueError, "macOS virtual keycode"):
+                e2e.validate_scenario({"name": "bad", "steps": [
+                    {"action": "key_hold", "keycode": code, "seconds": 1},
+                ]})
+        for seconds in (-1, 0, 91, True, "1"):
+            with self.assertRaisesRegex(ValueError, "key_hold seconds"):
+                e2e.validate_scenario({"name": "bad", "steps": [
+                    {"action": "key_hold", "keycode": 13, "seconds": seconds},
+                ]})
+
     def test_stick_coordinates_and_frame_limits(self):
         for bad in (32768, -32769, 1.2, None):
             with self.assertRaises(ValueError):
