@@ -53,7 +53,10 @@ class OverlayTests(unittest.TestCase):
                      "src/core.c", "src/save.c"):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(f"/* project fixture: {name} */\n")
+            if name in ("native/stadium_asset.h", "native/stadium_asset_stub.c"):
+                target.write_text((ROOT / name).read_text())
+            else:
+                target.write_text(f"/* project fixture: {name} */\n")
         subprocess.run(["git", "init", "-q", str(self.engine)], check=True)
         subprocess.run(["git", "add", "."], cwd=self.engine, check=True)
         subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"],
