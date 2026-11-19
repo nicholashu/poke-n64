@@ -149,10 +149,10 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         # integration, but load an entirely original Pallet Town scene/room
         # payload in place of Kokiri's ROM segments. Native OoT player,
         # collision, camera and room systems stay intact.
-        patch("spec/spec",
+        patch("spec/scenes_n64.inc",
               'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"',
               'include "$(BUILD_DIR)/src/code/poke_pallet_scene.o"')
-        patch("spec/spec",
+        patch("spec/scenes_n64.inc",
               'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"',
               'include "$(BUILD_DIR)/src/code/poke_pallet_room.o"')
         pallet_scene, pallet_room, _ = build_pallet_scene()
