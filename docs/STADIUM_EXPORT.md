@@ -49,7 +49,7 @@ Your earlier Finder screenshot shows **Pokémon Stadium (USA) (Rev 2)**, a later
 
 Our tool warns when the normalized ROM MD5 differs from US 1.0, attempts local extraction, and validates the resulting pack. It never silently treats an unverified revision as supported. If it fails with an archive/model parsing error, we need to map the Rev 2 model archive and battle pointer table or use a compatible US 1.0 cartridge dump. The repo provides no copyrighted ROMs or downloads.
 
-Use make stadium-inspect first. It prints the actual header revision and normalized MD5 without installing anything.
+Use make stadium-inspect first. It prints the actual header revision, normalized MD5, and whether the known US 1.0 model archive at 0x920000 has a valid directory, without installing anything. An archive match does not by itself prove that Rev 2's battle pointer tables and animations work. If the archive probe fails, extraction stops before installing third-party packages.
 
 ## Blender → Fast64 → OoT
 
