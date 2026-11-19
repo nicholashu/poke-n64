@@ -478,12 +478,19 @@ def extract_pack(rom_path: Path, species: int, output: Path) -> bytes:
     return output.read_bytes()
 
 
-def save_export(model: dict, directory: Path, target_height: float, rom: dict | None) -> tuple[Path, Path]:
+def save_export(model: dict, directory: Path, target_height: float, rom: dict | None,
+                animated: bool = False) -> tuple[Path, Path]:
     directory.mkdir(parents=True, exist_ok=True)
     tag = f"{model['species']:03d}"
-    glb_file = directory / f"stadium-{tag}.glb"
-    report_file = directory / f"stadium-{tag}.json"
-    glb_file.write_bytes(export_glb(model, target_height))
+    suffix = "-animated" if animated else ""
+    glb_file = directory / f"stadium-{tag}{suffix}.glb"
+    report_file = directory / f"stadium-{tag}{suffix}.json"
+    if animated:
+        from stadium_rig import export_skinned_glb
+        output = export_skinned_glb(model, target_height)
+    else:
+        output = export_glb(model, target_height)
+    glb_file.write_bytes(output)
     report = {
         "species": model["species"], "sourceRom": rom,
         "bones": len(model["bones"]), "primitives": len(model["primitives"]),
@@ -495,7 +502,8 @@ def save_export(model: dict, directory: Path, target_height: float, rom: dict | 
         "contexts": model["contexts"],
         "moveAnimations": model["moveAnimations"],
         "staticPose": model["staticPose"],
-        "exportedGlbType": "bind-pose rigid-baked mesh; NO animation clips or skin",
+        "exportedGlbType": ("skinned mesh with Stadium idle/attack animation clips"
+                            if animated else "bind-pose rigid-baked mesh; NO animation clips or skin"),
         "targetHeight": target_height,
     }
     report_file.write_text(json.dumps(report, indent=2) + "\n")
@@ -517,6 +525,8 @@ def main() -> None:
     parser.add_argument("--height", type=float, default=1.5, help="Blender model height in scene units")
     parser.add_argument("--inspect-only", action="store_true",
                         help="Print Stadium ROM fingerprint without installing extractor")
+    parser.add_argument("--animated", action="store_true",
+                        help="Export Stadium joint hierarchy with idle and attack_default animations")
     args = parser.parse_args()
     try:
         if not 1 <= args.species <= 151:
@@ -550,10 +560,15 @@ def main() -> None:
         if model["species"] != args.species:
             raise StadiumExportError(
                 f"Extractor returned species {model['species']} instead of {args.species}")
-        glb, report = save_export(model, args.output / f"{args.species:03d}", args.height, rom_info)
+        glb, report = save_export(model, args.output / f"{args.species:03d}",
+                                  args.height, rom_info, animated=args.animated)
         print(f"Exported Stadium model: {glb}\nMetadata: {report}")
         print("Open the .glb in Blender; convert materials and export via Fast64 for OoT.")
-        print("This is STATIC bind-pose geometry. Animations are indexed in metadata, not yet exported.")
+        if args.animated:
+            print("Skinned GLB includes Stadium idle and attack_default clips when present.")
+            print("Next stage is native F3DEX3 actor conversion; a GLB is not an OoT ROM object.")
+        else:
+            print("This is STATIC bind-pose geometry. Use --animated for rig and animation clips.")
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"Stadium export failed: {exc}\n")
 
