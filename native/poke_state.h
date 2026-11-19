@@ -14,6 +14,7 @@ typedef struct PokeState {
     s32 saveSlot;
     s32 drawBoxes;
     s32 bootSplash;
+    s32 bootReady;
 } PokeState;
 
 void Poke_Init(GameState* state);
