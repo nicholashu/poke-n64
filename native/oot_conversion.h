@@ -9,6 +9,8 @@ void PokeOot_OnSceneEnter(PlayState* play);
 void PokeOot_Update(PlayState* play);
 /* Stops OoT player movement only during the temporary turn-based battle test. */
 s32 PokeOot_BattleActive(void);
+s32 PokeOot_InputLocked(void);
+s32 PokeOot_ImportedPallet(void);
 void PokeOot_Draw(PlayState* play);
 
 #endif

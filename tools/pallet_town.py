@@ -195,7 +195,13 @@ def _collision_data(geom: Geometry):
     return vertices, polys
 
 
-def scene_source(geom: Geometry) -> str:
+def scene_source(geom: Geometry, *, bounds=WORLD_BOUNDS, spawn=SPAWN) -> str:
+    """Emit a scene with explicit bounds/spawn for generated maps as well.
+
+    Defaults preserve the original prototype. ROM importers must pass their
+    own coordinate system rather than changing module globals between builds.
+    """
+    x1, z1, x2, z2 = bounds
     vertices, polys = _collision_data(geom)
     lines = [
         '/* Original Pallet Town scene, replacing the Kokiri staging scene slot. */',
@@ -234,7 +240,7 @@ def scene_source(geom: Geometry) -> str:
         '    { (uintptr_t)_spot04_room_0SegmentRomStart,',
         '      (uintptr_t)_spot04_room_0SegmentRomEnd },',
         '};',
-        f'ActorEntry gPalletPlayerSpawns[] = {{ {{ ACTOR_PLAYER, {{ {SPAWN[0]}, 0, {SPAWN[2]} }},',
+        f'ActorEntry gPalletPlayerSpawns[] = {{ {{ ACTOR_PLAYER, {{ {spawn[0]}, {spawn[1]}, {spawn[2]} }},',
         '    { 0, DEG_TO_BINANG(180.0f), 0 }, 0x0FFF } };',
         'Spawn gPalletEntrances[] = { { 0, 0 } };',
         '/* Compatibility only: these Zelda cutscenes are still referenced by', 
@@ -278,7 +284,7 @@ def scene_source(geom: Geometry) -> str:
     lines += [
         '};',
         'CollisionHeader gPalletCollision = {',
-        '    { -1100, -30, -1300 }, { 1100, 365, 1150 },',
+        f'    {{ {x1}, -30, {z1} }}, {{ {x2}, 365, {z2} }},',
         '    ARRAY_COUNT(gPalletColVertices), gPalletColVertices,',
         '    ARRAY_COUNT(gPalletColPolys), gPalletColPolys,',
         '    gPalletSurfaceTypes, gPalletCameras, 0, NULL',

@@ -12,18 +12,23 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from bootstrap import DEFAULT_ENGINE, ROOT, install
+from bootstrap import DEFAULT_ENGINE, DEFAULT_PALLET_ENGINE, ROOT, install
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
+    parser.add_argument("--engine", type=Path)
     parser.add_argument("--require-mips", action="store_true")
     parser.add_argument("--oot-conversion", action="store_true",
                         help="check native PlayState total-conversion sources")
+    pokemon_rom = os.environ.get("POKE_POKEMON_ROM")
+    parser.add_argument("--pokemon-rom", type=Path,
+                        default=Path(pokemon_rom) if pokemon_rom else None,
+                        help="compile the scene and runtime data from a supported Red/Blue image")
     args = parser.parse_args()
-    engine = args.engine.resolve()
-    install(engine, boot_mode="oot" if args.oot_conversion else "poke")
+    engine = (args.engine or (DEFAULT_PALLET_ENGINE if args.pokemon_rom else DEFAULT_ENGINE)).resolve()
+    install(engine, boot_mode="oot" if args.oot_conversion else "poke",
+            pokemon_rom=args.pokemon_rom)
     compiler = os.environ.get("MIPS_CC")
     if compiler and not shutil.which(compiler):
         sys.exit(f"MIPS_CC does not exist: {compiler}")
@@ -54,6 +59,9 @@ def main() -> None:
     if args.oot_conversion:
         sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_oot.c",
                    "src/code/poke_stadium_asset.c",
+                   "src/code/poke_pallet_import.c",
+                   "src/code/poke_pallet_native.c",
+                   "src/code/poke_pallet_data.c",
                    "src/code/poke_pallet_scene_header.c",
                    "src/code/poke_pallet_scene.c",
                    "src/code/poke_pallet_room_header.c",

@@ -10,7 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
-from bootstrap import DEFAULT_ENGINE, LOCK, ROOT, install
+from bootstrap import DEFAULT_ENGINE, DEFAULT_PALLET_ENGINE, LOCK, ROOT, compile_pokemon_rom, install
 from build_env import native_make
 
 
@@ -202,15 +202,24 @@ def main() -> None:
                         help="build the stock Zelda boot path for diagnosing the custom state")
     parser.add_argument("--oot-conversion", action="store_true",
                         help="build Pokémon's native OoT PlayState total-conversion experiment")
+    pokemon_rom = os.environ.get("POKE_POKEMON_ROM")
+    parser.add_argument("--pokemon-rom", type=Path,
+                        default=Path(pokemon_rom) if pokemon_rom else None,
+                        help="generate Pallet Town from a supported local Red/Blue image")
     parser.add_argument("--refresh-setup", action="store_true",
                         help="force the full upstream ROM extraction and dependency setup")
     parser.add_argument("--check", action="store_true",
                         help="validate local input only; no downloads, builds or writes")
-    parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
+    parser.add_argument("--engine", type=Path)
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
     args = parser.parse_args()
     if args.control_boot and args.oot_conversion:
         raise RuntimeError("Choose only one boot mode: --control-boot or --oot-conversion")
+    if args.pokemon_rom is not None and not args.oot_conversion:
+        raise RuntimeError("--pokemon-rom requires --oot-conversion.")
+    if args.pokemon_rom is not None:
+        compile_pokemon_rom(args.pokemon_rom)
+        print(f"Validated Pokémon source: {args.pokemon_rom}", flush=True)
     # Validate source before cloning, downloading build tools or modifying files.
     path, data = select_rom(args.rom, args.roms_dir)
     print(f"Validated OoT US NTSC 1.2: {path}\nNormalized MD5: {LOCK['base_rom_md5']}", flush=True)
@@ -219,9 +228,9 @@ def main() -> None:
         return
     # Report missing native tools before downloading the engine or copying a ROM.
     make = native_make()
-    engine = args.engine.resolve()
+    engine = (args.engine or (DEFAULT_PALLET_ENGINE if args.pokemon_rom else DEFAULT_ENGINE)).resolve()
     mode = "control" if args.control_boot else ("oot" if args.oot_conversion else "poke")
-    install(engine, boot_mode=mode)
+    install(engine, boot_mode=mode, pokemon_rom=args.pokemon_rom)
     base = engine / "baseroms/ntsc-1.2/baserom.z64"
     if base.exists():
         if base.read_bytes() != data:
@@ -246,7 +255,7 @@ def main() -> None:
         subprocess.run([*common, "compress"], cwd=engine, check=True)
     if not generated.exists():
         raise RuntimeError(f"Build returned success without expected output: {generated}")
-    label = ("poke-n64-control" if args.control_boot else
+    label = ("poke-n64-pallet" if args.pokemon_rom else "poke-n64-control" if args.control_boot else
              "poke-n64-oot" if args.oot_conversion else "poke-n64")
     target = ROOT / f"build/{label}.z64"
     shutil.copyfile(generated, target)
@@ -262,7 +271,7 @@ def main() -> None:
     if not flips.is_file():
         raise RuntimeError(f"ROM built at {target}, but BPS tool is missing: {flips}")
     subprocess.run([str(flips), "--create", "--bps", str(base), str(target), str(patch)], check=True)
-    print(f"Native ROM: {target}\nDistributable patch: {patch}")
+    print(f"Native ROM: {target}\nLocal build patch: {patch}")
     print("Use an 8 MiB Expansion Pak and an F3DEX3-capable LLE emulator. Save type: SRAM 32 KiB.")
     print("This command builds; it does not verify gameplay in an emulator or on a console.")
 

@@ -1,10 +1,38 @@
 # Pokémon N64
 
-A native Nintendo 64 RPG prototype built on [HackerOoT](https://github.com/HackerN64/HackerOoT). The first slice is a small original Pallet / Route 1 test area: choose a starter, explore, battle wild Pokémon, catch them, heal and save.
+A native Nintendo 64 RPG project built on pinned [HackerOoT](https://github.com/HackerN64/HackerOoT), with an existing optional private Stadium model pipeline.
 
-**Current status:** the gameplay loop is implemented and tested on the host. The native renderer, controller adapter, SRAM journal and engine boot hooks compile into big-endian VR4300/MIPS objects against the pinned engine. A complete ROM has been linked locally using a user-supplied Ocarina of Time US NTSC 1.2 ROM, and the blue boot screen was verified in ParaLLEl N64 through RetroArch on 19 November 2026. **Native gameplay, cartridge saving and real hardware remain unverified.**
+## ROM-driven Pallet Town
 
-The 3D models are original, simple block models. Stadium/Snap models and animations have **not** been imported. This is an early playable rules prototype with native integration, not the full Kanto remake.
+This branch, **`feat/pallet-rom-converter`**, adds a Python converter that reads a user-supplied English **Pokémon Red or Blue** ROM and generates the outdoor Pallet Town scene for the existing N64 engine. It branches from the committed `feat/pallet-town-native-scene` prototype. The separate bedroom-to-rival opening work is not included here.
+
+```sh
+# Extract the map, dialogue and events; generate native assets and a map preview.
+make import-pallet POKEMON_ROM="/absolute/path/Pokemon Red.gb"
+
+# Build a separate N64 ROM with your existing OoT/Stadium setup.
+make rom-pallet-docker \
+  ROM="/absolute/path/Ocarina of Time US 1.2.z64" \
+  POKEMON_ROM="/absolute/path/Pokemon Red.gb"
+```
+
+The first command produces `build/gen1/pallet/`: an inspectable JSON extraction, a coverage report, a grid preview, native scene/collision/data C files, and a hash manifest. The second builds **`build/poke-n64-pallet.z64`** with a separate engine build directory. Your existing `poke-n64-oot.z64` workflow and private Stadium assets remain available.
+
+| Imported content | Behavior in this branch |
+| --- | --- |
+| Block layout and collision whitelist | Actual 20 × 18 walking grid, translated into 3D terrain and blocking walls |
+| Buildings and doors | Original procedural building meshes placed from tile components and extracted warp coordinates |
+| NPCs, signs and dialogue | Extracted placements and text; A interacts with the cell the player faces |
+| Oak at the north exit | Explicit known-version adapter: greeting, appearance, approach, warning and a collision-aware escort |
+| House/lab/route destinations | Extracted and reported; entering an unimplemented destination shows a boundary message |
+
+The outdoor spawn is just outside Red's house. Analog movement uses the native OoT player; the D-pad provides cardinal movement. Imported mode uses original NPC proxy meshes and paginated text. It does not run the prototype's debug starter shortcuts. Oak's escort ends at the lab entrance; **it never marks the lab entered or starts an unimplemented indoor event**.
+
+**Verification boundary:** format and address bindings are checked against pinned `pret/pokered` sources. Tests use invented ROM-shaped bytes, not bundled game content. Host tests, sanitizer checks, and native object compilation are separate from running a real supplied ROM. **No actual Red/Blue extraction, linked imported ROM, emulator playthrough, or hardware run has been verified in this workspace.**
+
+Yellow, arbitrary ROM hacks, indoor scenes, starter selection, rival battles, background NPC wandering, music and SRAM persistence are outside this importer slice. This is an explicit adapter for known Pallet behavior, not a general Game Boy assembly translator. The original escort movement data is extracted for inspection; the N64 runtime currently uses a collision-aware 3D route.
+
+See [Pallet ROM converter](docs/PALLET_ROM_CONVERTER.md) for supported hashes, source bindings, generated files, architecture and verification commands. The remaining sections describe the earlier standalone and native battle prototypes, which are still selectable through their existing commands.
 
 ## Animated Stadium Bulbasaur: experimental OoT battle
 

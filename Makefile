@@ -8,11 +8,12 @@ HEADERS = include/poke.h
 HOST = build/poke-n64
 # Export paths verbatim rather than interpolating filenames into a shell command.
 export POKE_N64_ROM := $(ROM)
+export POKE_POKEMON_ROM := $(POKEMON_ROM)
 STADIUM_SPECIES ?= 1
 export STADIUM_SPECIES
 export STADIUM_ROM
 
-.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-oot-play play-oot test-rom test-battle rom-oot-e2e rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help
+.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-oot-play import-pallet rom-pallet-docker play-oot test-rom test-battle rom-oot-e2e rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help
 all: $(HOST)
 
 build:
@@ -27,12 +28,16 @@ build/test-core: $(CORE) tests/test_core.c $(HEADERS) | build
 build/test-save: $(CORE) tests/test_save.c $(HEADERS) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) $(CORE) tests/test_save.c -o $@
 
+build/test-pallet-import: src/pallet_import.c tests/test_pallet_import.c include/poke_pallet_import.h | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) src/pallet_import.c tests/test_pallet_import.c -o $@
+
 play: $(HOST)
 	./$(HOST) $(ARGS)
 
-test: $(HOST) build/test-core build/test-save
+test: $(HOST) build/test-core build/test-save build/test-pallet-import
 	./build/test-core
 	./build/test-save
+	./build/test-pallet-import
 	$(PYTHON) host/test_cli.py $(HOST)
 	$(PYTHON) -m unittest discover -s tests -p 'test_*.py'
 
@@ -41,6 +46,8 @@ sanitize: | build
 	$(CC) $(CPPFLAGS) $(WARNINGS) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer $(CORE) tests/test_save.c -o build/test-save-sanitize
 	./build/test-core-sanitize
 	./build/test-save-sanitize
+	$(CC) $(CPPFLAGS) $(WARNINGS) -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer src/pallet_import.c tests/test_pallet_import.c -o build/test-pallet-import-sanitize
+	./build/test-pallet-import-sanitize
 
 engine:
 	$(PYTHON) tools/bootstrap.py
@@ -65,6 +72,12 @@ rom-docker:
 
 rom-oot-docker:
 	$(PYTHON) tools/docker_rom.py --oot-conversion
+
+import-pallet:
+	$(PYTHON) tools/pallet_rom.py
+
+rom-pallet-docker:
+	$(PYTHON) tools/docker_rom.py --oot-conversion --require-pokemon-rom
 
 # Always launch with unique, empty cartridge-save and savestate directories.
 play-oot:
@@ -104,7 +117,7 @@ stadium-n64:
 	$(PYTHON) tools/stadium_n64.py
 
 clean:
-	rm -f build/poke-n64 build/test-core build/test-save build/test-core-sanitize build/test-save-sanitize
+	rm -f build/poke-n64 build/test-core build/test-save build/test-core-sanitize build/test-save-sanitize build/test-pallet-import build/test-pallet-import-sanitize
 
 help:
 	@echo 'make play                  Play the shared-core development console'
@@ -117,6 +130,8 @@ help:
 	@echo 'make rom ROM=/path/oot.z64  Build native ROM using your OoT NTSC 1.2 dump'
 	@echo 'make rom-docker            Build original standalone Pokémon prototype'
 	@echo 'make rom-oot-docker        Build Pokémon total conversion on native OoT PlayState'
+	@echo 'make import-pallet         Extract/compile Pallet from POKEMON_ROM=/path/red.gb'
+	@echo 'make rom-pallet-docker     Build ROM-derived Pallet using ROM=oot.z64 POKEMON_ROM=red.gb'
 	@echo 'make play-oot              Launch built OoT ROM with fresh SRAM/savestate dirs'
 	@echo 'make rom-oot-play          Build then clean-launch Pokémon in ParaLLEl N64'
 	@echo 'make test-rom              Automate live N64 boot, controller, screenshots and assertions'

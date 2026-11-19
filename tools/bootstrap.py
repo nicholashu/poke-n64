@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 from pallet_town import build_segments as build_pallet_segments, unused_room_source
 import subprocess
@@ -17,6 +18,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = json.loads((ROOT / "native/upstream.json").read_text())
 DEFAULT_ENGINE = ROOT / "build/engine"
+DEFAULT_PALLET_ENGINE = ROOT / "build/engine-pallet"
 MANIFEST = ".poke-overlay.json"
 
 
@@ -50,9 +52,28 @@ def ensure_checkout(engine: Path) -> None:
         raise RuntimeError(f"Expected HackerOoT {LOCK['commit']}, found {actual}. Use a new --engine directory.")
 
 
-def install(engine: Path, boot_mode: str = "poke") -> None:
+def compile_pokemon_rom(path: Path) -> dict:
+    """Validate a supported local GB image and compile before any engine writes.
+
+    The compiler remains a lazy import so the ordinary ROM-free prototype has
+    no dependency on generated or user-supplied Pokémon data.
+    """
+    if path.stat().st_size != 1024 * 1024:
+        raise RuntimeError("Expected a 1 MiB English Pokémon Red or Blue ROM.")
+    from pallet_rom import compile_pallet
+    try:
+        return compile_pallet(path.read_bytes())
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def install(engine: Path, boot_mode: str = "poke", *,
+            pokemon_rom: Path | None = None) -> None:
     if boot_mode not in ("poke", "control", "oot"):
         raise ValueError("Unknown boot mode")
+    if pokemon_rom is not None and boot_mode != "oot":
+        raise RuntimeError("--pokemon-rom requires the OoT conversion mode.")
+    imported = compile_pokemon_rom(pokemon_rom) if pokemon_rom is not None else None
     ensure_checkout(engine)
     if boot_mode == "control":
         # A real baseline means *zero* Pokémon source, linker or header edits.
@@ -140,12 +161,14 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               "         * Suppress gameplay input only; Pokémon consumes the saved\n"
               "         * controller data after Play_Update returns.\n"
               "         */\n"
-              "        if (PokeOot_BattleActive()) {\n"
+              "        if (PokeOot_InputLocked() || PokeOot_ImportedPallet()) {\n"
               "            Input savedInput = this->state.input[0];\n"
               "            this->state.input[0].cur.button = 0;\n"
               "            this->state.input[0].press.button = 0;\n"
-              "            this->state.input[0].cur.stick_x = 0;\n"
-              "            this->state.input[0].cur.stick_y = 0;\n"
+              "            if (PokeOot_InputLocked()) {\n"
+              "                this->state.input[0].cur.stick_x = 0;\n"
+              "                this->state.input[0].cur.stick_y = 0;\n"
+              "            }\n"
               "            Play_Update(this);\n"
               "            this->state.input[0] = savedInput;\n"
               "        } else {\n"
@@ -163,7 +186,10 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_oot.o"\n'
-              '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"')
+              '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_import.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_native.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_data.o"')
         # Retain Kokiri's original scene ID and entrance for this first
         # integration, but load an entirely original Pallet Town scene/room
         # payload in place of Kokiri's ROM segments. Native OoT player,
@@ -200,9 +226,19 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
             outputs["src/code/poke_pallet_unused_room_" + str(room_index) + ".c"] = (
                 unused_room_source(room_index).encode()
             )
-        pallet_scene_head, pallet_scene, pallet_room_head, pallet_room, _ = (
-            build_pallet_segments()
-        )
+        if imported is None:
+            pallet_scene_head, pallet_scene, pallet_room_head, pallet_room, _ = (
+                build_pallet_segments()
+            )
+            outputs["src/code/poke_pallet_data.c"] = (
+                ROOT / "native/pallet_import_stub.c"
+            ).read_bytes()
+        else:
+            pallet_scene_head = imported["scene_header"]
+            pallet_scene = imported["scene"]
+            pallet_room_head = imported["room_header"]
+            pallet_room = imported["room"]
+            outputs["src/code/poke_pallet_data.c"] = imported["data_source"].encode()
         outputs["src/code/poke_pallet_scene_header.c"] = pallet_scene_head.encode()
         outputs["src/code/poke_pallet_scene.c"] = pallet_scene.encode()
         outputs["src/code/poke_pallet_room_header.c"] = pallet_room_head.encode()
@@ -249,6 +285,10 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         copies = {
             "native/oot_conversion.c": "src/code/poke_oot.c",
             "native/oot_conversion.h": "include/poke_oot.h",
+            "include/poke_pallet_import.h": "include/poke_pallet_import.h",
+            "src/pallet_import.c": "src/code/poke_pallet_import.c",
+            "native/pallet_import.h": "include/poke_pallet_native.h",
+            "native/pallet_import.c": "src/code/poke_pallet_native.c",
             "native/stadium_asset.h": "include/stadium_asset.h",
             "include/poke.h": "include/poke.h",
             "src/core.c": "src/code/poke_core.c",
@@ -295,11 +335,16 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
+    parser.add_argument("--engine", type=Path)
     parser.add_argument("--boot-mode", choices=("poke", "control", "oot"), default="poke")
+    pokemon_rom = os.environ.get("POKE_POKEMON_ROM")
+    parser.add_argument("--pokemon-rom", type=Path,
+                        default=Path(pokemon_rom) if pokemon_rom else None,
+                        help="generate Pallet Town from a supported local Red/Blue image")
     args = parser.parse_args()
+    engine = args.engine or (DEFAULT_PALLET_ENGINE if args.pokemon_rom else DEFAULT_ENGINE)
     try:
-        install(args.engine.resolve(), boot_mode=args.boot_mode)
+        install(engine.resolve(), boot_mode=args.boot_mode, pokemon_rom=args.pokemon_rom)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         sys.exit(f"Bootstrap failed: {exc}")
 

@@ -59,7 +59,9 @@ class OverlayTests(unittest.TestCase):
         for name in ("native/poke_state.c", "native/poke_state.h", "native/oot_conversion.c",
                      "native/oot_conversion.h", "native/stadium_asset.h",
                      "native/stadium_asset_stub.c", "include/poke.h",
-                     "src/core.c", "src/save.c"):
+                     "src/core.c", "src/save.c", "include/poke_pallet_import.h",
+                     "src/pallet_import.c", "native/pallet_import.c",
+                     "native/pallet_import.h", "native/pallet_import_stub.c"):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
             if name in ("native/stadium_asset.h", "native/stadium_asset_stub.c"):

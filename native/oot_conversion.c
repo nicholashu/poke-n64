@@ -19,6 +19,7 @@
 #include "sys_matrix.h"
 #include "z_lib.h"
 #include "view.h"
+#include "poke_pallet_native.h"
 
 /* Native bridge state persists across OoT room/scene loads. Not yet SRAM-
  * persisted: this first slice only validates the real OoT runtime integration.
@@ -43,6 +44,12 @@ static PokeOotRuntime sPokeOot;
 s32 PokeOot_BattleActive(void) {
     return sPokeOot.initialized && poke_in_battle(&sPokeOot.game);
 }
+
+s32 PokeOot_InputLocked(void) {
+    return PokeOot_BattleActive() || PokePalletNative_InputLocked();
+}
+
+s32 PokeOot_ImportedPallet(void) { return PokePalletNative_Enabled(); }
 
 static u16 PokeOot_BattleInput(const Input* input) {
     u16 b = input->cur.button;
@@ -103,6 +110,7 @@ void PokeOot_OnSceneEnter(PlayState* play) {
         poke_init(&sPokeOot.game, (u32)osGetTime() ^ 0x504F4B45U);
         sPokeOot.initialized = 1;
     }
+    PokePalletNative_OnSceneEnter(play);
     /* OoT's actor position may have teleported between scene loads. */
     sPokeOot.havePrevious = 0;
     sPokeOot.lastScene = play->sceneId;
@@ -128,6 +136,10 @@ void PokeOot_Update(PlayState* play) {
     f32 travelled;
 
     if (player == NULL || !sPokeOot.initialized) return;
+    if (PokePalletNative_Enabled()) {
+        PokePalletNative_Update(play);
+        return;
+    }
     if (sPokeOot.modelFrame < 0x7FFFFFFFU) sPokeOot.modelFrame++;
     else sPokeOot.modelFrame = 0;
     if (sPokeOot.attackFramesRemaining) sPokeOot.attackFramesRemaining--;
@@ -293,6 +305,10 @@ void PokeOot_Draw(PlayState* play) {
     unsigned choices;
 
     if (!sPokeOot.initialized) return;
+    if (PokePalletNative_Enabled()) {
+        PokePalletNative_Draw(play);
+        return;
+    }
     gfx = play->state.gfxCtx;
 
     PokeOot_DrawStadiumModel(play);
