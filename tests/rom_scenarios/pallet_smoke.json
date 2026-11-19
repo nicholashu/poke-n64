@@ -31,11 +31,9 @@
       "name": "idle_after"
     },
     {
-      "action": "stick",
-      "stick": "left",
-      "x": 0,
-      "y": -25000,
-      "seconds": 1.5
+      "action": "key_hold",
+      "keycode": 13,
+      "seconds": 2.5
     },
     {
       "action": "wait",
