@@ -49,7 +49,9 @@ def ensure_checkout(engine: Path) -> None:
         raise RuntimeError(f"Expected HackerOoT {LOCK['commit']}, found {actual}. Use a new --engine directory.")
 
 
-def install(engine: Path) -> None:
+def install(engine: Path, boot_mode: str = "poke") -> None:
+    if boot_mode not in ("poke", "control"):
+        raise ValueError("Unknown boot mode")
     ensure_checkout(engine)
     old_manifest_path = engine / MANIFEST
     old_manifest = json.loads(old_manifest_path.read_text()) if old_manifest_path.exists() else {}
@@ -70,7 +72,8 @@ def install(engine: Path) -> None:
         patch(path, '#include "setup_state.h"', '#include "setup_state.h"\n#include "poke_state.h"')
     patch("src/code/title_setup.c",
           "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
-          "SET_NEXT_GAMESTATE(&this->state, Poke_Init, PokeState);")
+          ("SET_NEXT_GAMESTATE(&this->state, Poke_Init, PokeState);" if boot_mode == "poke"
+           else "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);"))
     path = "include/tables/gamestate_table.h"
     outputs[path] = (original_text(path).rstrip() +
                      "\n/* poke-n64: resident custom RPG state */\n"
@@ -80,8 +83,10 @@ def install(engine: Path) -> None:
           '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
           '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
           '    include "$(BUILD_DIR)/src/code/poke_state.o"')
-    patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")', 'ROM_NAME("POKE N64 MVP")')
-    patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PK")')
+    patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
+          'ROM_NAME("POKE N64 MVP")' if boot_mode == "poke" else 'ROM_NAME("POKE N64 CONTROL")')
+    patch("src/makerom/rom_header.s", 'GAME_ID("ZL")',
+          'GAME_ID("PK")' if boot_mode == "poke" else 'GAME_ID("PC")')
     # The upstream stdint header only supplies pointer-sized types. Extend it with
     # standard C fixed widths rather than changing the shared portable sources.
     patch("include/libc/stdint.h", "#define STDINT_H", "#define STDINT_H\n\n"
@@ -124,9 +129,10 @@ def install(engine: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
+    parser.add_argument("--boot-mode", choices=("poke", "control"), default="poke")
     args = parser.parse_args()
     try:
-        install(args.engine.resolve())
+        install(args.engine.resolve(), boot_mode=args.boot_mode)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         sys.exit(f"Bootstrap failed: {exc}")
 
