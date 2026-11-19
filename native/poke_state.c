@@ -11,9 +11,13 @@
 #include "save.h"
 #include "ss_sram.h"
 #include "sys_matrix.h"
+#include "sys_math.h"
 #include "sys_ucode.h"
 
 #define WORLD_TILE 100
+#define POKE_PI 3.14159265f
+#define POKE_TWO_PI 6.2831853f
+#define FIELD_CAMERA_DISTANCE 340.0f
 #define MAX_DRAW_BOXES 260
 #define JOURNAL_SIZE 512
 #define JOURNAL_DATA 16
@@ -94,6 +98,151 @@ static u16 ReadKeys(const Input* input) {
     return keys;
 }
 
+/* OoT-style exploration uses a shoulder-height tracking camera instead of
+ * an elevated/isometric view. Battle cameras are independent of exploration.
+ * Camera state lives in PokeState, so the portable Pokémon save format remains
+ * stable and the host harness retains its existing cardinal controls.
+ */
+static f32 CameraApproach(f32 current, f32 target, f32 weight) {
+    return current + (target - current) * weight;
+}
+
+static f32 CameraApproachYaw(f32 current, f32 target, f32 weight) {
+    f32 difference = target - current;
+    while (difference > POKE_PI) difference -= POKE_TWO_PI;
+    while (difference < -POKE_PI) difference += POKE_TWO_PI;
+    return current + difference * weight;
+}
+
+static f32 FacingYaw(s32 dx, s32 dz) {
+    if (dx > 0) {
+        if (dz < 0) return POKE_PI * 0.25f;
+        if (dz > 0) return POKE_PI * 0.75f;
+        return POKE_PI * 0.5f;
+    }
+    if (dx < 0) {
+        if (dz < 0) return -POKE_PI * 0.25f;
+        if (dz > 0) return -POKE_PI * 0.75f;
+        return -POKE_PI * 0.5f;
+    }
+    return dz > 0 ? POKE_PI : 0.0f;
+}
+
+/* Camera-relative N64 analog/D-pad input is adapted to the platform-neutral
+ * eight-direction movement model. Menus and the host harness are unchanged.
+ */
+static u16 ReadFieldKeys(PokeState* self, const Input* input) {
+    s32 sx = input->cur.stick_x;
+    s32 sy = input->cur.stick_y;
+    u16 held = input->cur.button;
+    u16 keys = ReadKeys(input) & ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT);
+    f32 worldX, worldZ;
+    s32 dx = 0, dz = 0;
+
+    if (held & BTN_DLEFT) sx = -70;
+    if (held & BTN_DRIGHT) sx = 70;
+    if (held & BTN_DUP) sy = 70;
+    if (held & BTN_DDOWN) sy = -70;
+
+    /* Z recentres behind Red, matching OoT's basic camera behaviour.
+     * C-left and C-right offer optional orbit controls in this prototype.
+     * These can be reassigned to items when the inventory system expands. */
+    if (held & BTN_CLEFT) self->cameraYaw -= 0.045f;
+    if (held & BTN_CRIGHT) self->cameraYaw += 0.045f;
+    if (held & BTN_Z) self->cameraYaw = CameraApproachYaw(
+        self->cameraYaw, self->playerYaw, 0.35f);
+
+    if (sx > -22 && sx < 22) sx = 0;
+    if (sy > -22 && sy < 22) sy = 0;
+    if (sx == 0 && sy == 0) {
+        if (self->cameraIdleFrames < 120) self->cameraIdleFrames++;
+        return keys;
+    }
+    self->cameraIdleFrames = 0;
+    worldX = (f32)sx * Math_CosF(self->cameraYaw) + (f32)sy * Math_SinF(self->cameraYaw);
+    worldZ = (f32)sx * Math_SinF(self->cameraYaw) - (f32)sy * Math_CosF(self->cameraYaw);
+    if (worldX > 20.0f) { keys |= KEY_RIGHT; dx = 1; }
+    else if (worldX < -20.0f) { keys |= KEY_LEFT; dx = -1; }
+    if (worldZ > 20.0f) { keys |= KEY_DOWN; dz = 1; }
+    else if (worldZ < -20.0f) { keys |= KEY_UP; dz = -1; }
+    if (dx || dz) self->playerYaw = FacingYaw(dx, dz);
+    return keys;
+}
+
+/* Push the camera in front of walls/trees instead of placing it inside them.
+ * This intentionally uses coarse prototype tile collision, not OoT's scene
+ * collision. The future Blender maps should switch to real camera raycasts.
+ */
+static f32 CameraFreeDistance(f32 px, f32 pz, f32 yaw) {
+    f32 sine = Math_SinF(yaw);
+    f32 cosine = Math_CosF(yaw);
+    f32 distance;
+    for (distance = 130.0f; distance <= FIELD_CAMERA_DISTANCE; distance += 35.0f) {
+        f32 cx = px - sine * distance;
+        f32 cz = pz + cosine * distance;
+        int tx = (int)(cx / WORLD_TILE);
+        int tz = (int)(cz / WORLD_TILE);
+        PokeTile tile = poke_tile(tx, tz);
+        if (tile == TILE_WALL || tile == TILE_TREE) {
+            return distance - 34.0f;
+        }
+    }
+    return FIELD_CAMERA_DISTANCE;
+}
+
+static void FieldCamera(PokeState* self, Vec3f* eye, Vec3f* at) {
+    f32 px = (f32)self->game.x * WORLD_TILE / POKE_TILE;
+    f32 pz = (f32)self->game.z * WORLD_TILE / POKE_TILE;
+    f32 yaw = self->cameraYaw;
+    f32 sine, cosine, distance;
+    f32 desiredX, desiredY, desiredZ;
+
+    /* Follow Red's facing after pausing, but do not spin the camera while
+     * strafing. Otherwise camera-relative controls create feedback loops. */
+    if (self->cameraIdleFrames > 15) {
+        self->cameraYaw = CameraApproachYaw(self->cameraYaw, self->playerYaw, 0.055f);
+    }
+    yaw = self->cameraYaw;
+    sine = Math_SinF(yaw);
+    cosine = Math_CosF(yaw);
+    distance = CameraFreeDistance(px, pz, yaw);
+    desiredX = px - sine * distance;
+    desiredY = 175.0f;
+    desiredZ = pz + cosine * distance;
+
+    if (!self->cameraReady) {
+        self->cameraX = desiredX;
+        self->cameraY = desiredY;
+        self->cameraZ = desiredZ;
+        self->cameraReady = 1;
+    } else {
+        self->cameraX = CameraApproach(self->cameraX, desiredX, 0.18f);
+        self->cameraY = CameraApproach(self->cameraY, desiredY, 0.14f);
+        self->cameraZ = CameraApproach(self->cameraZ, desiredZ, 0.18f);
+    }
+    eye->x = self->cameraX;
+    eye->y = self->cameraY;
+    eye->z = self->cameraZ;
+    /* Look over Red's shoulder and ahead along the route. */
+    at->x = px + sine * 100.0f;
+    at->y = 73.0f;
+    at->z = pz - cosine * 100.0f;
+}
+
+/* Stadium-like battle broadcast camera. Characters and attack animations are
+ * still original proxy geometry; Stadium ROM models have NOT been imported. */
+static void StadiumCamera(PokeState* self, Vec3f* eye, Vec3f* at) {
+    f32 t = (f32)self->battleFrames;
+    f32 orbit = Math_SinF(t * 0.011f) * 0.16f;
+    f32 zoom = (f32)self->battleActionFrames * 5.0f;
+    eye->x = 210.0f + orbit * 140.0f;
+    eye->y = 193.0f + Math_SinF(t * 0.022f) * 7.0f;
+    eye->z = 550.0f - zoom;
+    at->x = 0.0f;
+    at->y = 75.0f;
+    at->z = 0.0f;
+}
+
 /* Vertices are generated in world coordinates. One identity model matrix is
  * shared by all boxes: no per-object matrix allocation or pointer serialization.
  */
@@ -128,29 +277,29 @@ static void Box(PokeState* self, int x, int y, int z, int sx, int sy, int sz, u8
     CLOSE_DISPS(gfx);
 }
 
-static void Creature(PokeState* self, int x, int z, u8 species) {
+static void Creature(PokeState* self, int x, int z, u8 species, int bob) {
     u8 r = 153, g = 111, b = 187;
     if (species == POKE_BULBASAUR) { r = 72; g = 177; b = 128; }
     if (species == POKE_CHARMANDER) { r = 240; g = 136; b = 66; }
     if (species == POKE_SQUIRTLE) { r = 101; g = 181; b = 222; }
     if (species == POKE_PIDGEY) { r = 184; g = 150; b = 104; }
-    Box(self, x, 12, z, 32, 39, 28, r, g, b);
-    Box(self, x, 45, z - 14, 27, 32, 25, r, g, b);
-    Box(self, x - 15, 0, z, 10, 17, 15, r, g, b);
-    Box(self, x + 15, 0, z, 10, 17, 15, r, g, b);
-    Box(self, x - 13, 63, z - 40, 5, 7, 3, 24, 29, 35);
-    Box(self, x + 13, 63, z - 40, 5, 7, 3, 24, 29, 35);
-    if (species == POKE_BULBASAUR) Box(self, x, 44, z + 19, 24, 32, 25, 54, 128, 70);
-    if (species == POKE_SQUIRTLE) Box(self, x, 24, z + 24, 28, 35, 12, 135, 98, 65);
-    if (species == POKE_CHARMANDER) Box(self, x, 18, z + 40, 7, 34, 9, 249, 205, 56);
+    Box(self, x, 12 + bob, z, 32, 39, 28, r, g, b);
+    Box(self, x, 45 + bob, z - 14, 27, 32, 25, r, g, b);
+    Box(self, x - 15, bob, z, 10, 17, 15, r, g, b);
+    Box(self, x + 15, bob, z, 10, 17, 15, r, g, b);
+    Box(self, x - 13, 63 + bob, z - 40, 5, 7, 3, 24, 29, 35);
+    Box(self, x + 13, 63 + bob, z - 40, 5, 7, 3, 24, 29, 35);
+    if (species == POKE_BULBASAUR) Box(self, x, 44 + bob, z + 19, 24, 32, 25, 54, 128, 70);
+    if (species == POKE_SQUIRTLE) Box(self, x, 24 + bob, z + 24, 28, 35, 12, 135, 98, 65);
+    if (species == POKE_CHARMANDER) Box(self, x, 18 + bob, z + 40, 7, 34, 9, 249, 205, 56);
     if (species == POKE_RATTATA) {
-        Box(self, x - 20, 74, z - 8, 9, 18, 9, r, g, b);
-        Box(self, x + 20, 74, z - 8, 9, 18, 9, r, g, b);
+        Box(self, x - 20, 74 + bob, z - 8, 9, 18, 9, r, g, b);
+        Box(self, x + 20, 74 + bob, z - 8, 9, 18, 9, r, g, b);
     }
     if (species == POKE_PIDGEY) {
-        Box(self, x - 38, 27, z, 14, 12, 23, r, g, b);
-        Box(self, x + 38, 27, z, 14, 12, 23, r, g, b);
-        Box(self, x, 53, z - 44, 9, 8, 10, 242, 199, 72);
+        Box(self, x - 38, 27 + bob, z, 14, 12, 23, r, g, b);
+        Box(self, x + 38, 27 + bob, z, 14, 12, 23, r, g, b);
+        Box(self, x, 53 + bob, z - 44, 9, 8, 10, 242, 199, 72);
     }
 }
 
