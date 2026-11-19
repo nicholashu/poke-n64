@@ -117,7 +117,21 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               "    PokeOot_OnSceneEnter(this);\n}")
         patch("src/code/z_play.c",
               "        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);",
-              "        if (!PokeOot_BattleActive()) Play_Update(this);\n"
+              "        /* Keep the native OoT camera/actor update alive in battle.\n"
+              "         * Suppress gameplay input only; Pokémon consumes the saved\n"
+              "         * controller data after Play_Update returns.\n"
+              "         */\n"
+              "        if (PokeOot_BattleActive()) {\n"
+              "            Input savedInput = this->state.input[0];\n"
+              "            this->state.input[0].cur.button = 0;\n"
+              "            this->state.input[0].press.button = 0;\n"
+              "            this->state.input[0].cur.stick_x = 0;\n"
+              "            this->state.input[0].cur.stick_y = 0;\n"
+              "            Play_Update(this);\n"
+              "            this->state.input[0] = savedInput;\n"
+              "        } else {\n"
+              "            Play_Update(this);\n"
+              "        }\n"
               "        PokeOot_Update(this);\n"
               "    }\n\n    PLAY_LOG(4583);")
         patch("src/code/z_play.c",
