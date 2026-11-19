@@ -12,7 +12,49 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import re
+import xml.etree.ElementTree as ET
 from bootstrap import DEFAULT_ENGINE, ROOT, install
+from kanto_layout import ORDER, ROOMS
+
+
+def declaration_include(engine: Path, output: Path) -> Path:
+    """Generate declaration-only compile prerequisites from pinned XML.
+
+    These live exclusively in the check output directory, never the engine's
+    real asset tree. A real ROM build still extracts its authoritative headers
+    and data. No fake definitions or replacement runtime assets are created.
+    """
+    include = output / "declarations"
+    relative = Path("assets/objects/gameplay_keep/gameplay_keep.h")
+    if (engine / relative).exists():
+        return include
+    source = (engine / "src/code/z_player_lib.c").read_text()
+    used = set(re.findall(r"\bg[A-Z][A-Za-z0-9_]*\b", source))
+    xml = ET.parse(engine / "assets/xml/objects/gameplay_keep.xml")
+    lines = ['/* Compile-only declarations from pinned extraction XML. */',
+             '#include "ultra64.h"', '#include "animation.h"']
+    for node in xml.iter():
+        name = node.get("Name")
+        if name not in used:
+            continue
+        if node.tag == "Texture":
+            lines.append(f"extern u64 {name}[];")
+        elif node.tag == "DList":
+            lines.append(f"extern Gfx {name}[];")
+        elif node.tag == "PlayerAnimation":
+            lines.append(f"extern LinkAnimationHeader {name};")
+        elif node.tag == "Array" and node.find("Vector") is not None:
+            vector = node.find("Vector")
+            if vector.get("Type") != "s16" or vector.get("Dimensions") != "3":
+                raise RuntimeError(f"Unsupported XML vector declaration: {name}")
+            lines.append(f"extern Vec3s {name}[{node.get('Count')}];")
+        else:
+            raise RuntimeError(f"Unsupported compile-only XML declaration: {node.tag} {name}")
+    target = include / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join(lines) + "\n")
+    return include
 
 
 def main() -> None:
@@ -42,18 +84,34 @@ def main() -> None:
              "-DPLATFORM_N64=1", "-DPLATFORM_GC=0", "-DPLATFORM_IQUE=0",
              "-DNDEBUG", "-DOOT_REGION=REGION_US", "-DOOT_REVISION=15", "-DLIBULTRA_PATCH=1",
              "-DLIBULTRA_VERSION=LIBULTRA_VERSION_I", "-DCOMPILER_GCC", "-DNON_MATCHING", "-DAVOID_UB",
-             "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-unused-variable", "-Wno-unknown-pragmas",
+             "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-unused-variable", "-Wno-unknown-pragmas", "-Wno-missing-braces",
              "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types",
              "-Werror=int-conversion"]
     output = ROOT / "build/native-check"
     output.mkdir(parents=True, exist_ok=True)
+    if args.oot_conversion:
+        flags += ["-I" + str(declaration_include(engine, output))]
     if native:
         flags += ["-EB", "-G0", "-march=vr4300", "-mfix4300", "-mabi=32", "-mno-abicalls", "-fno-PIC", "-c"]
     else:
         flags += ["-m32", "-fsyntax-only"]
     if args.oot_conversion:
         sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_oot.c",
-                   "src/code/poke_stadium_asset.c", "src/code/title_setup.c", "src/code/z_play.c"]
+                   "src/code/poke_stadium_asset.c",
+                   "src/code/poke_pallet_scene_header.c",
+                   "src/code/poke_pallet_scene.c",
+                   "src/code/poke_pallet_room_header.c",
+                   "src/code/poke_pallet_room.c",
+                   "src/code/poke_pallet_unused_room_1.c",
+                   "src/code/poke_pallet_unused_room_2.c",
+                   "src/code/title_setup.c", "src/code/z_play.c",
+                   "src/code/z_camera.c", "src/code/z_player_lib.c",
+                   "src/code/poke_intro.c", "src/code/poke_world.c",
+                   "src/code/poke_red_actor.c", "src/code/poke_red_mesh.c"]
+        for name in ORDER[1:]:
+            stem="src/code/poke_"+ROOMS[name]["segment"]
+            sources.extend(stem+suffix+".c" for suffix in
+                           ("_scene_header", "_scene", "_room_header", "_room"))
     else:
         sources = ["src/code/poke_core.c", "src/code/poke_save.c", "src/code/poke_state.c",
                    "src/code/title_setup.c", "src/code/z_game_dlftbls.c", "src/code/graph.c"]

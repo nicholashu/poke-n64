@@ -10,6 +10,9 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from pallet_town import build_segments as build_pallet_segments, unused_room_source
+from kanto_layout import ORDER, ROOMS, core_source as opening_core_source, native_header
+from character_models import source as character_source
 import subprocess
 import sys
 
@@ -101,7 +104,7 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               "    SaveContext_Init();\n"
               "    Sram_InitNewSave();\n"
               "    gSaveContext.fileNum = 0xFF; /* RAM-only engineering save */\n"
-              "    gSaveContext.save.entranceIndex = ENTR_KOKIRI_FOREST_0;\n"
+              "    gSaveContext.save.entranceIndex = ENTR_KNOW_IT_ALL_BROS_HOUSE_0;\n"
               "    gSaveContext.save.linkAge = LINK_AGE_CHILD;\n"
               "    gSaveContext.save.cutsceneIndex = CS_INDEX_NONE;\n"
               "    gSaveContext.save.dayTime = CLOCK_TIME(10, 0);\n"
@@ -109,16 +112,48 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         patch("src/code/title_setup.c",
               "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
               "SET_NEXT_GAMESTATE(&this->state, Play_Init, PlayState);")
+        patch("src/code/z_camera.c",
+              "    if (sOOBTimer < 200) {\n"
+              "        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);",
+              "    /* Pallet's provisional scene still uses the Kokiri scene ID.\n"
+              "     * Recover from the invalid camera-setting table observed on\n"
+              "     * the first playable frame (TLB load from near NULL). This\n"
+              "     * is deliberately scoped to the Pokémon total conversion.\n"
+              "     */\n"
+              "    if (camera->play != NULL &&\n"
+              "        camera->play->sceneId == SCENE_KOKIRI_FOREST &&\n"
+              "        (camera->setting <= CAM_SET_NONE || camera->setting >= CAM_SET_MAX ||\n"
+              "         camera->mode < CAM_MODE_NORMAL || camera->mode >= CAM_MODE_MAX ||\n"
+              "         sCameraSettings[camera->setting].cameraModes == NULL)) {\n"
+              "        camera->prevSetting = camera->setting = CAM_SET_NORMAL0;\n"
+              "        camera->mode = CAM_MODE_NORMAL;\n"
+              "        camera->animState = 0;\n"
+              "    }\n"
+              "    if (sOOBTimer < 200) {\n"
+              "        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);")
         patch("src/code/z_play.c", '#include "play_state.h"',
               '#include "play_state.h"\n#include "poke_oot.h"')
         patch("src/code/z_play.c", "    this->gameplayFrames = 0;\n}",
               "    this->gameplayFrames = 0;\n"
               "    PokeOot_OnSceneEnter(this);\n}")
+        patch("src/code/z_play.c", "    Play_InitScene(this, spawn);",
+              "    Play_InitScene(this, PokeOot_ResolveSpawn(sceneId, spawn));")
+        patch("src/code/z_play.c", "        Interface_Draw(this);",
+              "        if (!PokeOot_IsScene(this->sceneId)) Interface_Draw(this);")
         patch("src/code/z_play.c",
               "        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);",
-              "        if (!PokeOot_BattleActive()) Play_Update(this);\n"
+              "        Input pokeSavedInput = this->state.input[0];\n"
+              "        PokeOot_PrepareInput(this);\n"
+              "        Play_Update(this);\n"
+              "        this->state.input[0] = pokeSavedInput;\n"
               "        PokeOot_Update(this);\n"
               "    }\n\n    PLAY_LOG(4583);")
+        patch("src/code/z_player_lib.c", '#include "player.h"',
+              '#include "player.h"\n#include "poke_red.h"')
+        for next_function in ("Player_OverrideLimbDrawGameplayFirstPerson", "Player_OverrideLimbDrawGameplayCrawling"):
+            anchor="    return false;\n}\n\ns32 "+next_function
+            patch("src/code/z_player_lib.c",anchor,
+                  "    PokeRed_HideLinkLimb(play, dList);\n"+anchor)
         patch("src/code/z_play.c",
               "    Play_Draw(this);\n\n    PLAY_LOG(4587);",
               "    Play_Draw(this);\n"
@@ -129,7 +164,70 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_oot.o"\n'
-              '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"')
+              '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_intro.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_world.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_red_actor.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_red_mesh.o"')
+        # Retain Kokiri's original scene ID and entrance for this first
+        # integration, but load an entirely original Pallet Town scene/room
+        # payload in place of Kokiri's ROM segments. Native OoT player,
+        # collision, camera and room systems stay intact.
+        # The original Kokiri Forest draw config references Zelda-specific
+        # scrolling textures, room draw parameters and materials. Pallet's
+        # original geometry has none of those. Keep the stable entrance/scene
+        # ID, but use OoT's generic draw configuration for this slot.
+        patch("include/tables/scene_table.h",
+              "DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST, 0, 0)",
+              "DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_DEFAULT, 0, 0)")
+        # OoT loads scene/room commands from offset zero within each
+        # segmented ROM payload. GCC reorders module-level data declarations,
+        # so a single C object placed gPalletSceneHeader at offset 0x1004,
+        # with collision bytes at offset 0x0, causing a black screen.
+        # Link separate command-header objects FIRST in each ROM segment.
+        patch("spec/scenes_n64.inc",
+              'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"',
+              'include "$(BUILD_DIR)/src/code/poke_pallet_scene_header.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_scene.o"')
+        patch("spec/scenes_n64.inc",
+              'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"',
+              'include "$(BUILD_DIR)/src/code/poke_pallet_room_header.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_room.o"')
+        # Keep the existing ROM DMA slots (and ID ordering) for Kokiri's
+        # unused rooms 1 and 2. Their old meshes reference shared Kokiri
+        # textures, which are intentionally no longer in the Pallet scene.
+        for room_index in (1, 2):
+            patch("spec/scenes_n64.inc",
+                  'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_' +
+                  str(room_index) + '.o"',
+                  'include "$(BUILD_DIR)/src/code/poke_pallet_unused_room_' +
+                  str(room_index) + '.o"')
+            outputs["src/code/poke_pallet_unused_room_" + str(room_index) + ".c"] = (
+                unused_room_source(room_index).encode()
+            )
+        pallet_scene_head, pallet_scene, pallet_room_head, pallet_room, _ = (
+            build_pallet_segments()
+        )
+        outputs["src/code/poke_pallet_scene_header.c"] = pallet_scene_head.encode()
+        outputs["src/code/poke_pallet_scene.c"] = pallet_scene.encode()
+        outputs["src/code/poke_pallet_room_header.c"] = pallet_room_head.encode()
+        outputs["src/code/poke_pallet_room.c"] = pallet_room.encode()
+        # Four existing single-room interior slots, retaining DMA/scene IDs.
+        for name in ORDER[1:]:
+            room=ROOMS[name]; segment=room["segment"]
+            sh,sb,rh,rb,_=build_pallet_segments(name)
+            stem="poke_"+segment
+            for suffix,data in (("_scene_header",sh),("_scene",sb),("_room_header",rh),("_room",rb)):
+                outputs["src/code/"+stem+suffix+".c"]=data.encode()
+            for kind in ("scene","room"):
+                old=segment+"_scene" if kind=="scene" else segment+"_room_0"
+                patch("spec/scenes_n64.inc",
+                      'include "$(BUILD_DIR)/assets/scenes/indoors/'+segment+'/'+old+'.o"',
+                      'include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'_header.o"\n'
+                      '    include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'.o"')
+        outputs["src/code/poke_world.c"]=opening_core_source().encode()
+        outputs["src/code/poke_red_mesh.c"]=character_source().encode()
+        outputs["include/poke_world_native.h"]=native_header().encode()
         patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
               'ROM_NAME("POKEMON RED OOT")')
         patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PO")')
@@ -173,6 +271,10 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
             "native/oot_conversion.c": "src/code/poke_oot.c",
             "native/oot_conversion.h": "include/poke_oot.h",
             "native/stadium_asset.h": "include/stadium_asset.h",
+            "native/red_actor.h": "include/poke_red.h",
+            "native/red_actor.c": "src/code/poke_red_actor.c",
+            "include/poke_intro.h": "include/poke_intro.h",
+            "src/intro.c": "src/code/poke_intro.c",
             "include/poke.h": "include/poke.h",
             "src/core.c": "src/code/poke_core.c",
             "src/save.c": "src/code/poke_save.c",

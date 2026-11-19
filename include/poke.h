@@ -29,6 +29,7 @@ typedef enum {
 typedef enum { TYPE_NORMAL, TYPE_GRASS, TYPE_FIRE, TYPE_WATER, TYPE_FLYING, TYPE_POISON } PokeType;
 typedef enum { MODE_FIELD, MODE_STARTER, MODE_BATTLE, MODE_MOVES, MODE_BAG, MODE_PARTY, MODE_MENU } PokeMode;
 typedef enum { REQUEST_NONE, REQUEST_SAVE, REQUEST_LOAD } PokeRequest;
+typedef enum { BATTLE_NONE, BATTLE_WON, BATTLE_LOST, BATTLE_CAUGHT, BATTLE_RAN } PokeBattleResult;
 typedef enum { TILE_PATH, TILE_GRASS, TILE_TREE, TILE_WALL, TILE_HEAL, TILE_OAK, TILE_DOOR } PokeTile;
 typedef enum { POKE_OK, POKE_INVALID, POKE_NO_PP, POKE_NO_ITEM, POKE_PARTY_FULL, POKE_WRONG_MODE } PokeResult;
 
@@ -69,6 +70,8 @@ typedef struct {
     uint8_t party_count, active, mode, cursor, request, forced_switch;
     int8_t attack_stage[2], defense_stage[2];
     uint8_t seen_mask, caught_mask;
+    /* Transient battle state. Field-only version-1 saves remain byte-compatible. */
+    uint8_t trainer_battle, battle_result;
     char log[POKE_LOG_LINES][POKE_LOG_WIDTH];
 } PokeGame;
 
@@ -87,6 +90,7 @@ int poke_valid_mon(const PokeMon *mon);
 int poke_valid_game(const PokeGame *game);
 PokeResult poke_choose_starter(PokeGame *game, uint8_t species);
 PokeResult poke_start_encounter(PokeGame *game, uint8_t species, uint8_t level);
+PokeResult poke_start_trainer_battle(PokeGame *game, uint8_t species, uint8_t level);
 PokeResult poke_battle_move(PokeGame *game, uint8_t slot);
 PokeResult poke_capture(PokeGame *game);
 PokeResult poke_run(PokeGame *game);

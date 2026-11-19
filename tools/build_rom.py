@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import os
 import shutil
@@ -149,6 +150,49 @@ def compression_is_cached(engine: Path, compressed: Path) -> bool:
     )
 
 
+def linked_symbol_address(map_text: str, symbol: str) -> int:
+    """Read a concrete symbol address from a GNU ld map, not a reference."""
+    for line in map_text.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or not fields[0].startswith("0x"):
+            continue
+        if fields[1] == symbol:
+            try:
+                return int(fields[0], 16)
+            except ValueError:
+                continue
+    raise RuntimeError(f"Linker map is missing {symbol}; ROM cannot be verified")
+
+
+def verify_pallet_segment_headers(map_file: Path) -> None:
+    """Scene/room commands MUST start at offset zero of OoT ROM segments.
+
+    GCC can reorder global C variables within a translation unit; an earlier
+    build put collision data at scene offset 0 and the header at 0x1004.
+    Object-only compile tests missed this fatal startup error. Check the final
+    linked map on every OoT conversion build before ROM compression.
+    """
+    if not map_file.is_file():
+        raise RuntimeError(f"Native ROM link map missing: {map_file}")
+    data = map_file.read_text()
+    from kanto_layout import ORDER, ROOMS
+    pairs=[("spot04_scene","gPalletSceneHeader"),("spot04_room_0","gPalletRoomHeader")]
+    for name in ORDER[1:]:
+        segment=ROOMS[name]["segment"]
+        pairs.extend(((segment+"_scene","g"+name+"SceneHeader"),
+                      (segment+"_room_0","g"+name+"RoomHeader")))
+    for segment, header in pairs:
+        start = linked_symbol_address(data, f"_{segment}SegmentStart")
+        actual = linked_symbol_address(data, header)
+        if actual != start:
+            raise RuntimeError(
+                f"OoT {segment} header is not at ROM segment offset 0: "
+                f"{header} at 0x{actual:08X} but segment begins 0x{start:08X}. "
+                "OoT would read geometry or collision data as scene commands."
+            )
+        print(f"Verified {segment} commands at segment offset 0.", flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     environment_rom = os.environ.get("POKE_N64_ROM")
@@ -192,6 +236,10 @@ def main() -> None:
     common = [make, f"-j{jobs}", f"N_THREADS={jobs}", "VERSION=ntsc-1.2", "REGION=US", "DEBUG_FEATURES=0"]
     ensure_extracted(engine, common, refresh=args.refresh_setup)
     subprocess.run(common, cwd=engine, check=True)
+    if args.oot_conversion:
+        verify_pallet_segment_headers(
+            engine / "build/ntsc-1.2/hackeroot-ntsc-1.2.map"
+        )
     generated = engine / "build/ntsc-1.2/hackeroot-ntsc-1.2-compressed-yaz.z64"
     if compression_is_cached(engine, generated):
         print("Reusing up-to-date compressed ROM.", flush=True)

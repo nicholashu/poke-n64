@@ -13,6 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import build_rom
+from kanto_layout import ORDER, ROOMS
 
 
 class BuildCacheTests(unittest.TestCase):
@@ -30,6 +31,63 @@ class BuildCacheTests(unittest.TestCase):
                 path.write_bytes(b"synthetic fixture only")
             else:
                 path.mkdir(exist_ok=True)
+
+    def test_linked_scene_and_room_header_must_be_at_segment_zero(self):
+        # Minimal GNU ld map-shaped fixture. No proprietary Zelda data.
+        record = "\n".join([
+            "                0x02000000  _spot04_sceneSegmentStart = .",
+            "                0x02000000  gPalletSceneHeader",
+            "                0x02000100  gPalletCollision",
+            "                0x03000000  _spot04_room_0SegmentStart = .",
+            "                0x03000000  gPalletRoomHeader",
+            "                0x03000100  gPalletWorldDl",
+            "",
+        ])
+        for name in ORDER[1:]:
+            segment=ROOMS[name]["segment"]
+            for suffix,header,address in (("_scene","SceneHeader","02000000"),
+                                          ("_room_0","RoomHeader","03000000")):
+                record += f"0x{address} _{segment}{suffix}SegmentStart = .\n"
+                record += f"0x{address} g{name}{header}\n"
+        file = self.engine / "synthetic.map"
+        file.write_text(record)
+        self.assertEqual(
+            build_rom.linked_symbol_address(record, "gPalletSceneHeader"),
+            0x02000000,
+        )
+        build_rom.verify_pallet_segment_headers(file)
+        broken_scene = record.replace(
+            "0x02000000  gPalletSceneHeader",
+            "0x02001004  gPalletSceneHeader",
+        )
+        file.write_text(broken_scene)
+        with self.assertRaisesRegex(RuntimeError, "spot04_scene header.*offset 0"):
+            build_rom.verify_pallet_segment_headers(file)
+        broken_room = record.replace(
+            "0x03000000  gPalletRoomHeader",
+            "0x03001004  gPalletRoomHeader",
+        )
+        file.write_text(broken_room)
+        with self.assertRaisesRegex(RuntimeError, "spot04_room_0 header.*offset 0"):
+            build_rom.verify_pallet_segment_headers(file)
+
+        for name in ORDER[1:]:
+            for header,address in (("SceneHeader","02000000"),("RoomHeader","03000000")):
+                file.write_text(record.replace(f"0x{address} g{name}{header}",
+                                               f"0x{int(address,16)+16:08X} g{name}{header}"))
+                with self.assertRaisesRegex(RuntimeError, "header.*offset 0"):
+                    build_rom.verify_pallet_segment_headers(file)
+
+    def test_missing_link_map_or_symbol_is_not_silently_accepted(self):
+        file = self.engine / "missing.map"
+        with self.assertRaisesRegex(RuntimeError, "link map missing"):
+            build_rom.verify_pallet_segment_headers(file)
+        file.write_text(
+            "0x02000000 _spot04_sceneSegmentStart = .\n"
+            "0x02000000 gPalletSceneHeader\n"
+        )
+        with self.assertRaisesRegex(RuntimeError, "missing _spot04_room_0SegmentStart"):
+            build_rom.verify_pallet_segment_headers(file)
 
     def test_first_setup_runs_only_once_then_reuses_cached_extraction(self):
         calls = []

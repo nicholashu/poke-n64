@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import bootstrap
@@ -36,20 +37,37 @@ class OverlayTests(unittest.TestCase):
             "src/code/z_game_dlftbls.c": '#include "setup_state.h"\n',
             "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
+            "src/code/z_player_lib.c": '#include "player.h"\n    return false;\n}\n\ns32 Player_OverrideLimbDrawGameplayFirstPerson\n    return false;\n}\n\ns32 Player_OverrideLimbDrawGameplayCrawling\n',
+            "src/code/z_camera.c": '    if (sOOBTimer < 200) {\n'
+                                   '        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);\n',
+            "include/tables/scene_table.h": 'DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST, 0, 0)\n',
+            "spec/scenes_n64.inc": '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
+                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"\n'
+                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_1.o"\n'
+                                   '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_2.o"\n',
             "include/tables/gamestate_table.h": 'DEFINE_GAMESTATE_INTERNAL(Setup, GAMESTATE_SETUP)\n',
             "spec/spec": '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
-                         '    include "$(BUILD_DIR)/src/code/z_play.o"\n',
+                         '    include "$(BUILD_DIR)/src/code/z_play.o"\n'
+                         '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
+                         '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"\n',
             "src/makerom/rom_header.s": 'ROM_NAME("THE LEGEND OF ZELDA")\nGAME_ID("ZL")\n',
             "include/libc/stdint.h": '#ifndef STDINT_H\n#define STDINT_H\n#endif\n',
             "include/config/config_memory.h": '#define POLY_OPA_BUFFER_SIZE 0x1A00\n#define OVERLAY_BUFFER_SIZE 0x400\n',
         }
+        fixtures["src/code/z_play.c"] += "    Play_InitScene(this, spawn);\n        Interface_Draw(this);\n"
+        for name in bootstrap.ORDER[1:]:
+            segment=bootstrap.ROOMS[name]["segment"]
+            fixtures["spec/scenes_n64.inc"] += (
+                '    include "$(BUILD_DIR)/assets/scenes/indoors/'+segment+'/'+segment+'_scene.o"\n'
+                '    include "$(BUILD_DIR)/assets/scenes/indoors/'+segment+'/'+segment+'_room_0.o"\n')
         for name, content in fixtures.items():
             target = self.engine / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
         for name in ("native/poke_state.c", "native/poke_state.h", "native/oot_conversion.c",
                      "native/oot_conversion.h", "native/stadium_asset.h",
-                     "native/stadium_asset_stub.c", "include/poke.h",
+                     "native/stadium_asset_stub.c", "native/red_actor.c", "native/red_actor.h",
+                     "include/poke_intro.h", "src/intro.c", "include/poke.h",
                      "src/core.c", "src/save.c"):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +176,7 @@ class OverlayTests(unittest.TestCase):
             bootstrap.install(self.engine, boot_mode="oot")
         entry = (self.engine / "src/code/title_setup.c").read_text()
         self.assertIn("Sram_InitNewSave();", entry)
-        self.assertIn("ENTR_KOKIRI_FOREST_0", entry)
+        self.assertIn("ENTR_KNOW_IT_ALL_BROS_HOUSE_0", entry)
         self.assertIn("SET_NEXT_GAMESTATE(&this->state, Play_Init, PlayState);", entry)
         self.assertNotIn("Poke_Init, PokeState", entry)
         code = (self.engine / "src/code/z_play.c").read_text()
@@ -166,6 +184,51 @@ class OverlayTests(unittest.TestCase):
             self.assertIn(hook, code)
         spec = (self.engine / "spec/spec").read_text()
         self.assertIn("poke_oot.o", spec)
+        for obj in ("poke_intro.o","poke_world.o","poke_red_actor.o","poke_red_mesh.o"):
+            self.assertIn(obj,spec)
+        self.assertIn("PokeOot_ResolveSpawn(sceneId, spawn)",code)
+        player=(self.engine / "src/code/z_player_lib.c").read_text()
+        self.assertEqual(player.count("PokeRed_HideLinkLimb(play, dList);"),2)
+        for name in bootstrap.ORDER[1:]:
+            segment=bootstrap.ROOMS[name]["segment"]
+            self.assertIn("poke_"+segment+"_scene_header.o",(self.engine/"spec/scenes_n64.inc").read_text())
+        camera = (self.engine / "src/code/z_camera.c").read_text()
+        self.assertIn("sceneId == SCENE_KOKIRI_FOREST", camera)
+        self.assertIn("camera->setting <= CAM_SET_NONE", camera)
+        self.assertIn("camera->mode = CAM_MODE_NORMAL", camera)
+        scene_table = (self.engine / "include/tables/scene_table.h").read_text()
+        self.assertIn("SCENE_KOKIRI_FOREST, SDC_DEFAULT", scene_table)
+        self.assertNotIn("SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST", scene_table)
+        scene_spec = (self.engine / "spec/scenes_n64.inc").read_text()
+        self.assertIn("poke_pallet_scene_header.o", scene_spec)
+        self.assertIn("poke_pallet_scene.o", scene_spec)
+        self.assertIn("poke_pallet_room_header.o", scene_spec)
+        self.assertIn("poke_pallet_room.o", scene_spec)
+        self.assertLess(scene_spec.index("poke_pallet_scene_header.o"),
+                        scene_spec.index("poke_pallet_scene.o"))
+        self.assertLess(scene_spec.index("poke_pallet_room_header.o"),
+                        scene_spec.index("poke_pallet_room.o"))
+        self.assertNotIn("spot04/spot04_scene.o", scene_spec)
+        self.assertNotIn("spot04/spot04_room_0.o", scene_spec)
+        for room in (1, 2):
+            self.assertIn(f"poke_pallet_unused_room_{room}.o", scene_spec)
+            self.assertNotIn(f"spot04/spot04_room_{room}.o", scene_spec)
+            empty_room = (self.engine / f"src/code/poke_pallet_unused_room_{room}.c").read_text()
+            self.assertIn("SCENE_CMD_ROOM_SHAPE", empty_room)
+            self.assertNotIn("spot04_scene_", empty_room)
+        pallet_scene = (self.engine / "src/code/poke_pallet_scene.c").read_text()
+        self.assertIn("gKokiriForestDekuSproutPart3Cs", pallet_scene)
+        self.assertIn("gKokiriForestSariaGreetingCs", pallet_scene)
+        self.assertIn("CS_END_OF_SCRIPT()", pallet_scene)
+        self.assertNotIn("SceneCmd gPalletSceneHeader[]", pallet_scene)
+        scene_commands = (self.engine / "src/code/poke_pallet_scene_header.c").read_text()
+        self.assertIn("SceneCmd gPalletSceneHeader[]", scene_commands)
+        self.assertIn("SCENE_CMD_COL_HEADER", scene_commands)
+        room_body = (self.engine / "src/code/poke_pallet_room.c").read_text()
+        self.assertNotIn("SceneCmd gPalletRoomHeader[]", room_body)
+        room_commands = (self.engine / "src/code/poke_pallet_room_header.c").read_text()
+        self.assertIn("SceneCmd gPalletRoomHeader[]", room_commands)
+        self.assertIn("SCENE_CMD_ROOM_SHAPE", room_commands)
         self.assertIn("poke_core.o", spec)
         self.assertNotIn("poke_state.o", spec)
         self.assertNotIn("GAMESTATE_POKE", (self.engine / "include/tables/gamestate_table.h").read_text())

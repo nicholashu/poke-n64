@@ -1,0 +1,134 @@
+{
+  "name": "Pallet Town real battle: Bulbasaur Tackle lowers wild Rattata HP",
+  "description": "LEGACY: targets the pre-opening Pallet build with instant starter/debug shortcuts. Current ROMs use tools/opening_e2e.py; this fixture is retained only to reproduce old evidence. Runs the installed ParaLLEl N64 ROM with fresh state; chooses Bulbasaur via independent C mapping, opens a Rattata battle, selects Fight/Tackle, and verifies the enemy HP counter numerically from real native framebuffer OCR.",
+  "steps": [
+    {
+      "action": "wait",
+      "seconds": 9
+    },
+    {
+      "action": "assert_status"
+    },
+    {
+      "action": "screenshot",
+      "name": "field_before"
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "field_before"
+    },
+    {
+      "action": "key_chord",
+      "keycodes": [
+        14,
+        123
+      ],
+      "seconds": 0.45
+    },
+    {
+      "action": "wait",
+      "seconds": 0.5
+    },
+    {
+      "action": "screenshot",
+      "name": "starter_selected"
+    },
+    {
+      "action": "assert_visible",
+      "image": "starter_selected",
+      "min_color_spread": 35
+    },
+    {
+      "action": "key_chord",
+      "keycodes": [
+        14,
+        15,
+        56
+      ],
+      "seconds": 0.45
+    },
+    {
+      "action": "wait",
+      "seconds": 1.5
+    },
+    {
+      "action": "screenshot",
+      "name": "battle_menu"
+    },
+    {
+      "action": "assert_visible",
+      "image": "battle_menu",
+      "min_color_spread": 35
+    },
+    {
+      "action": "assert_changed",
+      "before": "starter_selected",
+      "after": "battle_menu",
+      "min_difference": 6
+    },
+    {
+      "action": "assert_text",
+      "image": "battle_menu",
+      "contains": "Rattata"
+    },
+    {
+      "action": "assert_text",
+      "image": "battle_menu",
+      "contains": "Fight"
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "battle_menu"
+    },
+    {
+      "action": "key_hold",
+      "keycode": 49,
+      "seconds": 0.28
+    },
+    {
+      "action": "wait",
+      "seconds": 0.55
+    },
+    {
+      "action": "screenshot",
+      "name": "move_menu"
+    },
+    {
+      "action": "assert_text",
+      "image": "move_menu",
+      "contains": "Tackle"
+    },
+    {
+      "action": "key_hold",
+      "keycode": 49,
+      "seconds": 0.28
+    },
+    {
+      "action": "wait",
+      "seconds": 1.7
+    },
+    {
+      "action": "screenshot",
+      "name": "after_attack"
+    },
+    {
+      "action": "assert_text",
+      "image": "after_attack",
+      "contains": "Bulbasaur used Tackle"
+    },
+    {
+      "action": "assert_hp_decreased",
+      "before": "battle_menu",
+      "after": "after_attack",
+      "expected_max_hp": 17,
+      "min_damage": 1
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "after_attack"
+    },
+    {
+      "action": "assert_status"
+    }
+  ]
+}

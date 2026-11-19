@@ -1,0 +1,76 @@
+{
+  "name": "Bedroom: wake, walk, no N64 exception",
+  "description": "Short diagnostic only. Wake Red in the bedroom, then compare idle and actual walking frames. Use tools/opening_e2e.py for state-verified complete opening.",
+  "steps": [
+    {
+      "action": "wait",
+      "seconds": 10
+    },
+    {
+      "action": "key_hold",
+      "keycode": 49,
+      "seconds": 0.2
+    },
+    {
+      "action": "wait",
+      "seconds": 2
+    },
+    {
+      "action": "assert_status"
+    },
+    {
+      "action": "screenshot",
+      "name": "idle_before"
+    },
+    {
+      "action": "assert_visible",
+      "image": "idle_before",
+      "min_color_spread": 35
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "idle_before"
+    },
+    {
+      "action": "wait",
+      "seconds": 1.5
+    },
+    {
+      "action": "screenshot",
+      "name": "idle_after"
+    },
+    {
+      "action": "key_hold",
+      "keycode": 13,
+      "seconds": 1.0
+    },
+    {
+      "action": "wait",
+      "seconds": 0.35
+    },
+    {
+      "action": "screenshot",
+      "name": "after_walk"
+    },
+    {
+      "action": "assert_visible",
+      "image": "after_walk",
+      "min_color_spread": 35
+    },
+    {
+      "action": "assert_movement",
+      "idle_before": "idle_before",
+      "before": "idle_after",
+      "after": "after_walk",
+      "ratio": 1.8,
+      "min_difference": 8
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "after_walk"
+    },
+    {
+      "action": "assert_status"
+    }
+  ]
+}
