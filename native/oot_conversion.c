@@ -15,6 +15,10 @@
 #include "gfx.h"
 #include "libu64/gfxprint.h"
 #include "save.h"
+#include "stadium_asset.h"
+#include "sys_matrix.h"
+#include "z_lib.h"
+#include "view.h"
 
 /* Native bridge state persists across OoT room/scene loads. Not yet SRAM-
  * persisted: this first slice only validates the real OoT runtime integration.
@@ -26,6 +30,8 @@ typedef struct {
     s16 lastScene;
     u8 initialized;
     u8 havePrevious;
+    u32 modelFrame;
+    u8 attackFramesRemaining;
 } PokeOotRuntime;
 
 static PokeOotRuntime sPokeOot;
@@ -87,6 +93,15 @@ void PokeOot_Update(PlayState* play) {
      * Do not steal OoT's movement, Z-target or camera updates. */
     held = input->cur.button;
     pressed = input->press.button;
+    if (sPokeOot.modelFrame < 0x7FFFFFFFU) sPokeOot.modelFrame++;
+    else sPokeOot.modelFrame = 0;
+    if (sPokeOot.attackFramesRemaining) sPokeOot.attackFramesRemaining--;
+    /* Local model smoke test, separate from the eventual battle state. */
+    if ((held & (BTN_L | BTN_R)) == (BTN_L | BTN_R) &&
+        (pressed & BTN_A) && PokeStadium_AssetAvailable()) {
+        sPokeOot.attackFramesRemaining = 24;
+        sPokeOot.modelFrame = 0;
+    }
     if (!(sPokeOot.game.flags & FLAG_STARTER) && (held & BTN_L)) {
         u8 species = POKE_NONE;
         if (pressed & BTN_CLEFT) species = POKE_BULBASAUR;
@@ -99,12 +114,40 @@ void PokeOot_Update(PlayState* play) {
     }
 }
 
+/* Preview the *real* user-exported Stadium Bulbasaur in a native OoT room.
+ * This retains the scene camera, room geometry and collision. A proper battle
+ * actor/sub-camera will reuse the same asset draw routine in a later slice.
+ */
+static void PokeOot_DrawStadiumModel(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    GraphicsContext* gfx = play->state.gfxCtx;
+    f32 x, z;
+    if (!PokeStadium_AssetAvailable() || player == NULL) return;
+
+    x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 165.0f;
+    z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 165.0f;
+
+    View_Apply(&play->view, VIEW_ALL);
+    Matrix_Push();
+    Matrix_Translate(x, player->actor.world.pos.y, z, MTXMODE_NEW);
+    Matrix_RotateY((f32)player->actor.shape.rot.y * (3.14159265f / 32768.0f),
+                   MTXMODE_APPLY);
+
+    OPEN_DISPS(gfx);
+    MATRIX_FINALIZE_AND_LOAD(POLY_OPA_DISP++, gfx);
+    CLOSE_DISPS(gfx);
+    PokeStadium_DrawBulbasaur(gfx, sPokeOot.attackFramesRemaining != 0,
+                              sPokeOot.modelFrame);
+    Matrix_Pop();
+}
+
 void PokeOot_Draw(PlayState* play) {
     GraphicsContext* gfx;
     GfxPrint printer;
 
     if (!sPokeOot.initialized) return;
     gfx = play->state.gfxCtx;
+    PokeOot_DrawStadiumModel(play);
 
     OPEN_DISPS(gfx);
     gSPSegment(OVERLAY_DISP++, 0, 0);
@@ -127,7 +170,11 @@ void PokeOot_Draw(PlayState* play) {
 
     GfxPrint_SetColor(&printer, 225, 229, 230, 255);
     GfxPrint_SetPosPx(&printer, 16, 216);
-    GfxPrint_Printf(&printer, "NATIVE ZELDA PLAYER + CAMERA  |  TEST SCENE %d", play->sceneId);
+    if (PokeStadium_AssetAvailable()) {
+        GfxPrint_Printf(&printer, "STADIUM BULBASAUR: L+R+A ATTACK");
+    } else {
+        GfxPrint_Printf(&printer, "STADIUM MODEL MISSING: make stadium-n64");
+    }
     OVERLAY_DISP = GfxPrint_Close(&printer);
     GfxPrint_Destroy(&printer);
     CLOSE_DISPS(gfx);
