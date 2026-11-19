@@ -110,6 +110,25 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         patch("src/code/title_setup.c",
               "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
               "SET_NEXT_GAMESTATE(&this->state, Play_Init, PlayState);")
+        patch("src/code/z_camera.c",
+              "    if (sOOBTimer < 200) {\n"
+              "        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);",
+              "    /* Pallet's provisional scene still uses the Kokiri scene ID.\n"
+              "     * Recover from the invalid camera-setting table observed on\n"
+              "     * the first playable frame (TLB load from near NULL). This\n"
+              "     * is deliberately scoped to the Pokémon total conversion.\n"
+              "     */\n"
+              "    if (camera->play != NULL &&\n"
+              "        camera->play->sceneId == SCENE_KOKIRI_FOREST &&\n"
+              "        (camera->setting <= CAM_SET_NONE || camera->setting >= CAM_SET_MAX ||\n"
+              "         camera->mode < CAM_MODE_NORMAL || camera->mode >= CAM_MODE_MAX ||\n"
+              "         sCameraSettings[camera->setting].cameraModes == NULL)) {\n"
+              "        camera->prevSetting = camera->setting = CAM_SET_NORMAL0;\n"
+              "        camera->mode = CAM_MODE_NORMAL;\n"
+              "        camera->animState = 0;\n"
+              "    }\n"
+              "    if (sOOBTimer < 200) {\n"
+              "        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);")
         patch("src/code/z_play.c", '#include "play_state.h"',
               '#include "play_state.h"\n#include "poke_oot.h"')
         patch("src/code/z_play.c", "    this->gameplayFrames = 0;\n}",
