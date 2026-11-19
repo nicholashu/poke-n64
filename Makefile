@@ -13,7 +13,7 @@ STADIUM_SPECIES ?= 1
 export STADIUM_SPECIES
 export STADIUM_ROM
 
-.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-oot-play import-pallet rom-pallet-docker play-oot test-rom test-battle rom-oot-e2e rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help test-opening test-scripted-rom rom-opening-e2e
+.PHONY: play-pallet rom-pallet-e2e test-pallet-opening all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-oot-play import-pallet rom-pallet-docker play-oot test-rom test-battle rom-oot-e2e rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help test-opening test-scripted-rom rom-opening-e2e
 all: $(HOST)
 
 build:
@@ -88,6 +88,17 @@ import-pallet:
 rom-pallet-docker:
 	$(PYTHON) tools/docker_rom.py --oot-conversion --require-pokemon-rom
 
+# ROM-extracted Pallet exterior plus the entire five-room opening.
+# Uses private GB data only in the local build, never committed to Git.
+play-pallet:
+	$(PYTHON) tools/play_oot.py --rom build/poke-n64-pallet.z64
+
+test-pallet-opening:
+	$(PYTHON) tools/opening_e2e.py --rom build/poke-n64-pallet.z64 --starter $(STARTER) $(OPENING_ARGS)
+
+rom-pallet-e2e: rom-pallet-docker
+	$(PYTHON) tools/opening_e2e.py --rom build/poke-n64-pallet.z64 --starter $(STARTER) $(OPENING_ARGS)
+
 # Always launch with unique, empty cartridge-save and savestate directories.
 play-oot:
 	$(PYTHON) tools/play_oot.py
@@ -143,7 +154,10 @@ help:
 	@echo 'make rom-docker            Build original standalone Pokémon prototype'
 	@echo 'make rom-oot-docker        Build Pokémon total conversion on native OoT PlayState'
 	@echo 'make import-pallet         Extract/compile Pallet from POKEMON_ROM=/path/red.gb'
-	@echo 'make rom-pallet-docker     Build ROM-derived Pallet using ROM=oot.z64 POKEMON_ROM=red.gb'
+	@echo 'make rom-pallet-docker     Build converted Red/Blue ROM with full opening'
+	@echo 'make play-pallet           Play converted Red/Blue N64 ROM with clean saves'
+	@echo 'make test-pallet-opening   Run bedroom-to-rival E2E on converted ROM'
+	@echo 'make rom-pallet-e2e        Build converted ROM and test the entire opening'
 	@echo 'make play-oot              Launch built OoT ROM with fresh SRAM/savestate dirs'
 	@echo 'make rom-oot-play          Build then clean-launch Pokémon in ParaLLEl N64'
 	@echo 'make test-opening          Bedroom to rival battle and back outside (STARTER=bulbasaur)'
