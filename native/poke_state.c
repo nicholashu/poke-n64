@@ -335,6 +335,22 @@ static void Poke_Main(GameState* state) {
     u8 request;
     if (self->bootSplash) {
         if (state->input[0].press.button & BTN_A) {
+            /* First prove the framebuffer path works without invoking any
+             * world, SRAM, view or matrix initialization at boot. */
+            Matrix_Init(state);
+            Letterbox_Init();
+#if ENABLE_NEW_LETTERBOX
+            ShrinkWindow_Init();
+#endif
+            Letterbox_SetSize(0);
+            View_Init(&self->view, state->gfxCtx);
+            View_SetPerspective(&self->view, 55.0f, 10.0f, 3500.0f);
+            SET_FULLSCREEN_VIEWPORT(&self->view);
+            poke_init(&self->game, (u32)osGetTime() ^ 0x504F4B45U);
+            self->saveGeneration = 0;
+            self->saveSlot = -1;
+            self->drawBoxes = 0;
+            self->bootReady = 1;
             if (!(state->input[0].cur.button & BTN_Z)) JournalLoad(self);
             self->bootSplash = 0;
             self->game.previous_keys = KEY_A;
@@ -353,29 +369,19 @@ static void Poke_Main(GameState* state) {
 
 void Poke_Init(GameState* state) {
     PokeState* self = (PokeState*)state;
-    R_UPDATE_RATE = 2; /* 30 game updates per second on NTSC */
-    Matrix_Init(state);
-    Letterbox_Init();
-#if ENABLE_NEW_LETTERBOX
-    ShrinkWindow_Init();
-#endif
-    Letterbox_SetSize(0);
-    View_Init(&self->view, state->gfxCtx);
-    View_SetPerspective(&self->view, 55.0f, 10.0f, 3500.0f);
-    SET_FULLSCREEN_VIEWPORT(&self->view);
-    poke_init(&self->game, (u32)osGetTime() ^ 0x504F4B45U);
-    self->saveGeneration = 0;
-    self->saveSlot = -1;
-    self->drawBoxes = 0;
+    /* Keep the first visible frame independent of all gameplay subsystems.
+     * Even matrix/view setup is deferred until the user presses A. */
     self->bootSplash = 1;
-    /* Defer cartridge read until the boot probe has rendered successfully. */
+    self->bootReady = 0;
     state->main = Poke_Main;
     state->destroy = Poke_Destroy;
     state->running = true;
+    R_UPDATE_RATE = 2; /* 30 game updates per second on NTSC */
 }
 
 void Poke_Destroy(GameState* state) {
-    (void)state;
+    PokeState* self = (PokeState*)state;
+    if (!self->bootReady) return;
 #if ENABLE_NEW_LETTERBOX
     ShrinkWindow_Destroy();
 #endif
