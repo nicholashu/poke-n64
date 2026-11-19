@@ -38,7 +38,9 @@ class OverlayTests(unittest.TestCase):
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
             "include/tables/gamestate_table.h": 'DEFINE_GAMESTATE_INTERNAL(Setup, GAMESTATE_SETUP)\n',
             "spec/spec": '    include "$(BUILD_DIR)/src/code/title_setup.o"\n'
-                         '    include "$(BUILD_DIR)/src/code/z_play.o"\n',
+                         '    include "$(BUILD_DIR)/src/code/z_play.o"\n'
+                         '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
+                         '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"\n',
             "src/makerom/rom_header.s": 'ROM_NAME("THE LEGEND OF ZELDA")\nGAME_ID("ZL")\n',
             "include/libc/stdint.h": '#ifndef STDINT_H\n#define STDINT_H\n#endif\n',
             "include/config/config_memory.h": '#define POLY_OPA_BUFFER_SIZE 0x1A00\n#define OVERLAY_BUFFER_SIZE 0x400\n',
@@ -166,6 +168,12 @@ class OverlayTests(unittest.TestCase):
             self.assertIn(hook, code)
         spec = (self.engine / "spec/spec").read_text()
         self.assertIn("poke_oot.o", spec)
+        self.assertIn("poke_pallet_scene.o", spec)
+        self.assertIn("poke_pallet_room.o", spec)
+        self.assertNotIn("spot04/spot04_scene.o", spec)
+        self.assertNotIn("spot04/spot04_room_0.o", spec)
+        self.assertIn("SCENE_CMD_COL_HEADER", (self.engine / "src/code/poke_pallet_scene.c").read_text())
+        self.assertIn("SCENE_CMD_ROOM_SHAPE", (self.engine / "src/code/poke_pallet_room.c").read_text())
         self.assertIn("poke_core.o", spec)
         self.assertNotIn("poke_state.o", spec)
         self.assertNotIn("GAMESTATE_POKE", (self.engine / "include/tables/gamestate_table.h").read_text())
