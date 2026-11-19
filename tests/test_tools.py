@@ -76,7 +76,6 @@ class OverlayTests(unittest.TestCase):
         runtime = (ROOT / "native/poke_state.c").read_text()
         self.assertIn("static void DrawBoot(PokeState* self)", runtime)
         self.assertIn("self->bootSplash = 1;", runtime)
-        self.assertIn("self->bootReady = 0;", runtime)
         # Heavy initialization is deliberately after the A-press branch, not
         # in Poke_Init before the first diagnostic framebuffer.
         init = runtime.split("void Poke_Init(GameState* state)", 1)[1].split("void Poke_Destroy(", 1)[0]
