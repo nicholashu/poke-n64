@@ -14,6 +14,18 @@ typedef struct PokeState {
     s32 saveSlot;
     s32 drawBoxes;
     s32 bootSplash;
+    /* Native-only OoT-style chase camera. Never serialized into Gen 1 saves. */
+    f32 cameraYaw;
+    f32 playerYaw;
+    f32 cameraX;
+    f32 cameraY;
+    f32 cameraZ;
+    s32 cameraIdleFrames;
+    s32 cameraReady;
+    s32 battleFrames;
+    s32 battleActionFrames;
+    u16 seenTurns;
+    u8 wasInBattle;
 } PokeState;
 
 void Poke_Init(GameState* state);
