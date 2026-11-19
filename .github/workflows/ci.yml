@@ -15,8 +15,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install screenshot decoder test dependency
+        run: |
+          python3 -m venv build/test-venv
+          build/test-venv/bin/python -m pip install Pillow
       - name: Build and exercise the complete slice
-        run: make test
+        run: make test PYTHON=build/test-venv/bin/python
       - name: Check memory and undefined behavior
         run: make sanitize
 

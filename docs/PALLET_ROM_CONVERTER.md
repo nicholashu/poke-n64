@@ -2,7 +2,7 @@
 
 `feat/pallet-rom-converter` adds an optional import stage to the existing HackerOoT total conversion. The supplied Pokémon ROM is the source of map layout, collision data, object placement, doors, connections and dialogue. The repository contains format bindings, original procedural art rules and an authored event adapter.
 
-The branch starts at `dada720` on `feat/pallet-town-native-scene`. It does not incorporate the uncommitted five-room opening from a separate worktree. The original standalone prototype and existing native battle mode are retained.
+The branch started at `dada720` on `feat/pallet-town-native-scene` and incorporates the subsequent five-room opening commit `7681952`. The ordinary authored opening, standalone prototype and existing private Stadium asset path are retained. Imported mode is a separate outdoor slice; it does not yet feed extracted events into the full indoor story.
 
 ## Run it
 
@@ -84,7 +84,7 @@ The portable runner supports directional NPC/sign interactions, paginated dialog
 
 **Not implemented:** the Game Boy script as a general VM; the exact original escort timing/path; wandering residents; indoors; starter selection; the rival battle; later Pallet/Daisy/Pokédex events; music; or persistent story saves. Raw movement bytes are extracted into the JSON for the later fidelity pass. The current escort uses a deterministic path through passable cells.
 
-Route connection records and door destinations are retained even when their scenes are unavailable. Static collision seals the map bounds. Boundary messages avoid making unsupported transitions look successful. The ordinary `make rom-oot-docker` mode, without `POKEMON_ROM`, still builds the earlier outdoor/battle prototype.
+Route connection records and door destinations are retained even when their imported transitions are unavailable. Static collision seals the map bounds. Boundary messages avoid making unsupported transitions look successful. The ordinary `make rom-oot-docker` mode, without `POKEMON_ROM`, builds the authored bedroom-to-rival opening. Its indoor scenes do not automatically make their source-game event/data adapters complete for imported mode.
 
 ## Generated output
 
@@ -131,7 +131,7 @@ These checks do **not** establish a successful extraction from a real user ROM, 
 
 ### Checks completed for this branch
 
-- `make test`: passed, including 167 Python tests, the three portable C suites and the console journey test.
+- `make test`: passed after integrating the five-room opening, including 181 Python tests, four portable C suites and the console journey test. The opening suite completes 96 journeys across all three starters and both rival outcomes.
 - ASan/UBSan: passed with `ASAN_OPTIONS=detect_leaks=0 make sanitize`. LeakSanitizer cannot run under this workspace's process tracing; address and undefined-behavior checks ran. The added portable runner has no heap allocations.
-- Real MIPS object compilation: passed against pinned HackerOoT for the default mode and generated synthetic imported scene/data. Objects were confirmed ELF32 big-endian MIPS-III.
+- Real MIPS object compilation: passed against pinned HackerOoT for the full five-room default mode and generated synthetic imported scene/data, including the shared Red renderer. Objects were confirmed ELF32 big-endian MIPS-III.
 - Source-data cross-check: the pinned Pallet map/blockset produces three rectangular buildings, 221 passable cells, 2,490 visual triangles and 394 collision polygons. A host driver using this reference collision grid and synthetic dialogue completed the escort from both north exit cells without crossing blocked cells or setting the lab-entered flag. This was not a ROM or emulator run.

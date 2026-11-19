@@ -37,7 +37,7 @@ void PokePalletNative_Update(PlayState* play) {
     Player* player = GET_PLAYER(play);
     Input* input = &play->state.input[0];
     int x, y, face_x = 0, face_y = 0;
-    s32 directional = 0, was_scripted;
+    s32 was_scripted;
     s16 yaw;
     if (!PokePalletNative_Enabled() || !sPallet.active || !player ||
         play->sceneId != SCENE_KOKIRI_FOREST) return;
@@ -50,12 +50,8 @@ void PokePalletNative_Update(PlayState* play) {
     else if (yaw >= 0x6000 || yaw < -0x6000) face_y = -1;
     else face_x = -1;
     if (!poke_pallet_locked(&sPallet)) {
-        /* Cardinal walking is useful alongside the native analog controller.
-         * The portable runner rejects imported blocked/NPC cells. */
-        if (input->cur.button & BTN_DUP) { y -= 4; face_x = 0; face_y = -1; directional = 1; }
-        else if (input->cur.button & BTN_DDOWN) { y += 4; face_x = 0; face_y = 1; directional = 1; }
-        else if (input->cur.button & BTN_DLEFT) { x -= 4; face_x = -1; face_y = 0; directional = 1; }
-        else if (input->cur.button & BTN_DRIGHT) { x += 4; face_x = 1; face_y = 0; directional = 1; }
+        /* PrepareInput converts cardinal D-pad directions to native analog.
+         * Both controller paths have already gone through OoT player physics. */
         poke_pallet_face(&sPallet, face_x, face_y);
     }
     poke_pallet_update(&sPallet, &gPokePalletMap, x, y,
@@ -76,7 +72,7 @@ void PokePalletNative_Update(PlayState* play) {
     }
     /* Native analog movement keeps its smooth actor rotation. Only movement
      * commanded by this adapter should force a cardinal render heading. */
-    if ((directional || was_scripted) && (sPallet.face_x || sPallet.face_y)) {
+    if (was_scripted && (sPallet.face_x || sPallet.face_y)) {
         yaw = sPallet.face_x > 0 ? 0x4000 : sPallet.face_x < 0 ? -0x4000 :
               sPallet.face_y < 0 ? (s16)0x8000 : 0;
         player->actor.shape.rot.y = player->actor.world.rot.y = yaw;
@@ -160,6 +156,7 @@ void PokePalletNative_Draw(PlayState* play) {
     const char* prompt;
     if (!PokePalletNative_Enabled() || play->sceneId != SCENE_KOKIRI_FOREST) return;
     if (sPallet.active) people(play);
+    if (play->transitionTrigger!=TRANS_TRIGGER_OFF || play->transitionMode!=TRANS_MODE_OFF) return;
     panel(gfx, 8, 8, 304, 34);
     panel(gfx, 8, sPallet.talking ? 166 : 214, 304, sPallet.talking ? 67 : 19);
     OPEN_DISPS(gfx);

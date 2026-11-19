@@ -1,4 +1,6 @@
-# MVP specification and delivery record
+# Initial standalone MVP specification and delivery record
+
+**Historical scope:** this document describes the earlier console/standalone prototype. The current native bedroom-to-rival opening is documented in [PALLET_TOWN.md](PALLET_TOWN.md) and the [README](../README.md).
 
 ## Goal
 

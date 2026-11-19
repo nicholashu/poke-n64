@@ -1,6 +1,6 @@
 {
   "name": "Pallet Town real battle: Bulbasaur Tackle lowers wild Rattata HP",
-  "description": "Runs the installed ParaLLEl N64 ROM with fresh state; chooses Bulbasaur via independent C mapping, opens a Rattata battle, selects Fight/Tackle, and verifies the enemy HP counter numerically from real native framebuffer OCR.",
+  "description": "LEGACY: targets the pre-opening Pallet build with instant starter/debug shortcuts. Current ROMs use tools/opening_e2e.py; this fixture is retained only to reproduce old evidence. Runs the installed ParaLLEl N64 ROM with fresh state; chooses Bulbasaur via independent C mapping, opens a Rattata battle, selects Fight/Tackle, and verifies the enemy HP counter numerically from real native framebuffer OCR.",
   "steps": [
     {
       "action": "wait",

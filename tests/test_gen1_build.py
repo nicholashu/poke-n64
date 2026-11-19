@@ -130,7 +130,16 @@ class PalletOverlayTests(unittest.TestCase):
             self.assertTrue((self.engine / f"src/code/{name}.c").is_file())
         self.assertTrue((self.engine / "include/poke_pallet_import.h").is_file())
         self.assertTrue((self.engine / "include/poke_pallet_native.h").is_file())
-        self.assertIn("PokeOot_InputLocked()", (self.engine / "src/code/z_play.c").read_text())
+        self.assertIn("PokeOot_PrepareInput(this)", (self.engine / "src/code/z_play.c").read_text())
+        entry = (self.engine / "src/code/title_setup.c").read_text()
+        self.assertIn("gSaveContext.save.entranceIndex = ENTR_KOKIRI_FOREST_0;", entry)
+        self.assertNotIn("ENTR_KNOW_IT_ALL_BROS_HOUSE_0", entry)
+        # Preserve the full opening's scene/link layout for future integration,
+        # while imported mode starts in its own outdoor map and event runner.
+        for name in bootstrap.ORDER[1:]:
+            stem = "poke_" + bootstrap.ROOMS[name]["segment"]
+            for suffix in ("_scene_header", "_scene", "_room_header", "_room"):
+                self.assertTrue((self.engine / "src/code" / (stem + suffix + ".c")).is_file())
 
     def test_refresh_and_return_to_default_do_not_retain_imported_data(self):
         source = self.root / "private source.gb"
@@ -152,6 +161,9 @@ class PalletOverlayTests(unittest.TestCase):
         scene = (self.engine / "src/code/poke_pallet_scene.c").read_text()
         self.assertNotIn("synthetic B", scene)
         self.assertIn("gPalletCollision", scene)
+        entry = (self.engine / "src/code/title_setup.c").read_text()
+        self.assertIn("gSaveContext.save.entranceIndex = ENTR_KNOW_IT_ALL_BROS_HOUSE_0;", entry)
+        self.assertNotIn("ENTR_KOKIRI_FOREST_0", entry)
 
     def test_invalid_reimport_keeps_previous_manifest_and_assets(self):
         source = self.root / "private source.gb"

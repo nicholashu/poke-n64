@@ -1,143 +1,153 @@
-# Automated N64 gameplay tests
+# Automated native opening test
 
-This harness drives the **real** OoT conversion ROM in the user's installed
-ParaLLEl N64 (Parallel Launcher Edition), with controller inputs and screenshots.
-It is not a simulated gameplay test or a static MIPS compiler check.
+`tools/opening_e2e.py` plays the **actual ROM** in the installed macOS ParaLLEl N64 (Parallel Launcher Edition). It uses ordinary controller events, actual framebuffer captures and a read-only state panel. This live runner is distinct from the portable C tests and the MIPS object compiler check.
 
-## Commands (macOS)
+**Current evidence:** offline protocol/route/failure tests pass. The new complete opening runner has not yet been executed against a newly linked ROM on the development Mac. The older successful outdoor and wild-battle smoke runs do not establish this new flow.
+
+## Run it
+
+Close any instance already playing the same ROM, then:
 
 ```sh
-# Build and run normal unit tests, no ROM or emulator required.
-make test
+# Pillow is required to decode screenshots; Swift comes with Xcode tools.
+python3 -m pip install Pillow
 
-# Validate the scripted scenario without launching anything.
-python3 tools/retroarch_e2e.py --check-only
+# Build once and run the complete opening.
+make rom-opening-e2e
 
-# Launch the existing ROM, test boot and move Link with the verified W-key binding.
-make test-rom
+# Reuse the built ROM.
+make test-opening
+make test-opening STARTER=charmander
+make test-opening STARTER=squirtle
 
-# Rebuild the ROM from the locally provided Zelda dump, then test it.
-make rom-oot-e2e
+# Three independent runs, each with empty save/state directories.
+make test-opening OPENING_ARGS=--all-starters
 
-# Test a real wild Rattata battle, including numeric HP damage:
-make test-battle
-
-# Choose a different scenario:
-make test-rom ROM_SCENARIO=tests/rom_scenarios/pallet_smoke.json
+# Validate paths without launching an emulator or reading a ROM.
+python3 tools/opening_e2e.py --check-only
 ```
 
-The native test uses `build/poke-n64-oot.z64`, the local ParaLLEl Launcher
-Edition core and the user's existing Vulkan / ParaLLEl RSP configuration.
-Python 3 is required. **Pillow** is needed for pixel assertions (installed on
-the development Mac; otherwise `python3 -m pip install Pillow`). Screenshot
-text checks use the built-in **macOS Vision** framework through Swift, with no
-network or cloud OCR.
+`make test-rom` and `make test-battle` are aliases of `test-opening`. `make rom-oot-e2e` builds and runs the complete opening. A custom ROM path can be supplied directly:
 
-## How it works
+```sh
+python3 tools/opening_e2e.py --rom /absolute/path/poke-n64-oot.z64 --starter bulbasaur
+```
 
-Each run creates a unique folder in `build/emulator-tests/`, including fresh
-`saves/`, `states/`, `screenshots/`, a per-run `test-config.cfg`, process
-and RetroArch logs and a machine-readable `report.json`. The harness:
+The native build is `build/poke-n64-oot.z64`, not the earlier standalone `build/poke-n64.z64`.
 
-1. Refuses to start if the same ROM is already running, so it won't terminate
-   or hijack a game you're playing.
-2. Starts the installed RetroArch executable **itself** (not the menu window)
-   with the correct core, existing graphics settings, `--no-patch` and an
-   isolated `--appendconfig`. It tracks that process for safe cleanup.
-3. Allocates unique UDP ports for RetroArch's Network Control Interface
-   and Remote RetroPad. Control requests and controller inputs go to
-   `127.0.0.1` (never a hosted service).
-4. Waits for a `GET_STATUS PLAYING` response and confirms the configured
-   cartridge SRAM path is the fresh session directory.
-5. Sends real latched RetroPad button and analog stick states, or targeted\n   macOS keyboard events to the test-owned RetroArch PID. It can
-   request native framebuffer PNG screenshots, assert pixel changes, check
-   the displayed text or look for N64 fault overlays.
-6. Releases all inputs and quits **only the RetroArch process it started**.
-   It writes a pass/fail report even when a step fails.
+## What the test proves when it passes
 
-Your normal `.srm` saves and savestates are neither opened nor deleted.
-Graphics/RSP settings are left alone. All generated artifacts remain untracked
-under `build/`.
+The runner waits for and records 21 checkpoints:
 
-Network Control commands (GET_STATUS, SCREENSHOT, PAUSE_TOGGLE, FRAMEADVANCE)
-and Remote RetroPad input are separate, documented RetroArch UDP protocols.
-Since Remote RetroPad messages persist until released, the harness always
-sends an explicit release, including in exception cleanup.
+1. Bedroom wake prompt.
+2. Red out of bed and movement unlocked.
+3. One-time PC Potion dialogue.
+4. Successful stairs transition downstairs.
+5. Mother interaction.
+6. Successful door transition to Pallet.
+7. Entry into Blue's house.
+8. Daisy interaction.
+9. Oak's north-grass warning.
+10. Outdoor escort state.
+11. Lab scene loaded and welcome dialogue active.
+12. Starter choice unlocked.
+13. Ball confirmation with no starter yet.
+14. Cancellation leaves the choice uncommitted.
+15. Ball confirmation reopened.
+16. Correct starter and type-advantage rival selected.
+17. Lab aisle triggers Blue's challenge.
+18. Actual trainer battle with command menu.
+19. Battle finishes with a recorded win/loss.
+20. Opening completed, Pokémon healed and movement restored.
+21. Exit back to Pallet with the chosen starter retained.
 
-## Scenario format
+During the battle, repeated A presses choose Fight and the first damaging move. The test requires a positive turn count and an HP decrease **observed during an active trainer battle**. It does not treat the cleared enemy allocation after battle as evidence of damage. Accuracy rolls are allowed to miss; the fight continues instead of requiring a hit on its first turn. Either victory or defeat is a valid opening outcome.
 
-Scenarios are restricted JSON (no arbitrary Python, shell commands, paths
-outside the run directory or arbitrary memory writes). Each step has an
-`action`:
+Navigation uses a cardinal path through the original passability grid, excludes current NPC cells and unintended doorways, and corrects each controller pulse from the ROM's measured position. No controller event teleports the player or modifies a story flag. Scripted Oak movement is ordinary game behavior reached through the same interaction as a manual playthrough.
 
-| Action | Example | Behaviour |
-| --- | --- | --- |
-| `wait` | `{"action":"wait","seconds":3}` | Wait for emulation |
-| `tap` | `{"action":"tap","buttons":["n64_a"],"seconds":0.2}` | Button down, then up |
-| `press` | `{"action":"press","buttons":["l","r"]}` | Latch multiple buttons down |
-| `release` | `{"action":"release","buttons":["l","r"]}` | Release specified buttons |
-| `release_all` | `{"action":"release_all"}` | Center axes, release every button |
-| `stick` | `{"action":"stick","stick":"left","x":0,"y":-25000,"seconds":1.5}` | Send Remote RetroPad analog axis (core-dependent) |\n| `key_hold` | `{"action":"key_hold","keycode":13,"seconds":2.5}` | Hold macOS virtual keycode 13 (W) in the exact test-owned emulator PID, then release |
-| `screenshot` | `{"action":"screenshot","name":"walk"}` | Save native screenshot in the run directory |
-| `assert_visible` | `{"action":"assert_visible","image":"walk","min_color_spread":35}` | Reject blank/uniform images |
-| `assert_changed` | `{"action":"assert_changed","before":"spawn","after":"walk","min_difference":1.5}` | Detect image movement |
-| `assert_movement` | `{"action":"assert_movement","idle_before":"idle1","before":"idle2","after":"walk","ratio":1.8}` | Check walking changes the image more than idle animation/title fading |
-| `assert_hp_decreased` | `{"action":"assert_hp_decreased","before":"battle_menu","after":"after_attack","expected_max_hp":17}` | Parse enemy HP from the native battle HUD via macOS Vision OCR and require real numeric HP loss |
-| `assert_no_fault` | `{"action":"assert_no_fault","image":"walk"}` | OCR and reject recognizable N64 exception screens |
-| `assert_text` | `{"action":"assert_text","image":"walk","contains":"PALLET"}` | Assert readable HUD/menu text |
-| `assert_status` | `{"action":"assert_status"}` | Check emulator still playing |
-| `pause` / `resume` | `{"action":"pause"}` | Toggle pause only if needed |
-| `frames` | `{"action":"frames","count":5}` | Advance while paused |
+## Session ownership and evidence
 
-All button names are **RetroPad names** (`b`, `y`, `start`, `l`,
-`r`, etc.), or high-level aliases `n64_a`, `n64_b`, `n64_z`,
-`n64_l`, `n64_r`, `n64_start`. The default Parallel N64 core maps N64
-A to RetroPad B and N64 B to RetroPad Y. The C-buttons can differ with
-`parallel-n64-alt-map`; use raw RetroPad controls and verify before
-claiming a deterministic battle scenario.
+Every run creates a unique folder under `build/emulator-tests/` with:
 
-`tests/rom_scenarios/pallet_smoke.json` is the first end-to-end fixture.
-It boots, waits for the title banner to settle, captures two idle
-reference frames, moves Link forward, captures again, and verifies the movement
-diff exceeds the idle animation/title-card drift. On the current macOS\nParallel Launcher build, Remote RetroPad UDP analog packets reach the frontend\nbut have not reliably moved Link, so the smoke uses the verified `W` keyboard\nbinding via `tools/retroarch_keys.swift` (macOS Accessibility permission\nrequired). The raw `stick` action remains available for protocol experiments. The test also checks for
-OoT's exception overlays.
+| Output | Purpose |
+| --- | --- |
+| `report.json` | Pass/fail, selected starter, checkpoints, damage and turn evidence |
+| `state-trace.json` | Every decoded state, associated capture and current navigation checkpoint |
+| `screenshots/` | Raw framebuffer PNGs, including intermediate observations |
+| `failure.txt` | Failure detail, when applicable |
+| `retroarch.log`, `process.log` | Emulator diagnostics |
+| `test-config.cfg` | Temporary input/network/save overrides |
+| `saves/`, `states/` | Initially empty cartridge-save and savestate directories |
 
-### Live battle regression
+The harness starts and owns one emulator PID. It refuses to start if the same ROM is already running, confirms RetroArch is playing and reports the isolated save directory, and quits only the instance it started. Cleanup releases held inputs even after a failure or interruption. Existing saves and other emulator sessions are not reused or removed.
 
-`tests/rom_scenarios/battle_smoke.json` exercises the native Pokémon battle
-without a simulated core or imported saves. It uses the installed Parallel
-N64 **independent C-button layout**, which differs from normal RetroPad
-button names:
+Graphics/RDP/RSP configuration comes from the existing working installation. `config_save_on_exit=false` prevents temporary settings from replacing normal preferences. Shaders/filters and screenshot notifications are disabled for readable captures. Normal emulator hotkeys require an unused F12 modifier during the run, so Tab cannot accidentally invoke fast-forward.
 
-- Hold **E + Left Arrow** (macOS keycodes 14 + 123) to pick Bulbasaur.
-- Hold **E + R + Shift** (14 + 15 + 56) to open the L+R+B wild Rattata battle.
-- Press **Space** (49) to choose **Fight**, then again to use **Tackle**.
-- Verify **Rattata**, **Fight**, **Tackle**, the turn-result message and the
-  enemy's numeric `HP current/max` before and after the attack.
+Controller bindings are local to the session:
 
-These are sent exclusively to the test-owned RetroArch process using
-`retroarch_keys.swift`; they never remap or change the user's saved input
-configuration. The numeric HP assertion handles common macOS Vision OCR
-errors from the low-resolution HUD (for example, `HP 17/17` appearing as
-`HР 17717`). Unlike a generic screenshot-difference check, it reports
-the exact damage or fails when it cannot prove an HP decrease.
+| macOS key | Scripted control |
+| --- | --- |
+| I / J / K / L | N64 D-pad north / west / south / east |
+| Space | N64 A |
+| Left Shift | N64 B |
+| E / R / Tab / Return together | N64 L + R + Z + Start, observer toggle |
 
-A single Tackle can miss according to the game rules. When it does, the
-strict test will report a failed HP assertion rather than claiming a hit.
-`battle_probe.json` is a diagnostic alternative which records every stage
-without asserting HP loss.
+The L/R mappings cover the core's standard and independent-C layouts; extra C-button bits are ignored by the game. The Swift event helper is compiled once per run and posts to the exact owned process. macOS permission for those events is required. A missing permission or ineffective binding causes a timeout/no-movement failure, never a successful test.
 
-### Limitations and future precision
+## Read-only screen protocol
 
-Controller/keyboard movement uses real wall-clock durations rather than an exact frame
-counter. The harness supports paused `FRAMEADVANCE` for finer experiments,
-but RetroArch applies remote input datagrams one per frame, so simultaneous
-presses are delivered across successive frames. Screenshots and OCR test
-visible behaviour, not Link's exact coordinates; adding a read-only RAM
-bridge for `Player.actor.world.pos` would enable coordinate and collision
-assertions once the core's memory map is verified.
+Holding N64 **L + R + Z** and pressing **Start** toggles a diagnostic panel. It is absent during normal play. The panel contains 32 bytes in a 16 × 16 bit grid, each bit a 4 × 4 rectangle. Its origin is `(248,6)` on the 320 × 240 framebuffer, inside a cyan border. The native renderer separates fill-color batches with RDP pipeline syncs.
 
-This is a **local native integration test**, not a GitHub Actions emulator
-job. CI still runs the ROM-free protocol tests; real-ROM gameplay assertions
-run against the licensed local dump and can be invoked by Luna or the
-developer on their Mac.
+| Byte offset | Meaning |
+| --- | --- |
+| 0–3 | ASCII `PK64` |
+| 4 | Protocol version, currently 1 |
+| 5 | Room: Pallet 0, bedroom 1, downstairs 2, Blue's house 3, lab 4 |
+| 6 | Opening stage, declared in `include/poke_intro.h` |
+| 7 | Dialogue ID |
+| 8–9 | Player starter and rival species IDs |
+| 10–11 | Shared game mode and battle result |
+| 12–15 | Own HP, enemy HP, own max HP, enemy max HP |
+| 16–19 | x and z, unsigned big-endian 16-bit quarter-world-units from the map's west/north edge |
+| 20–21 | Native update frame counter, low 16 bits, big-endian |
+| 22–27 | Menu cursor, trainer flag, battle turns, input lock, warp/facing flags, opening outcome |
+| 28–31 | Big-endian CRC32 of the first 28 bytes |
+
+Byte 26 bit 0 indicates a pending warp; bits 1–2 report facing (north 0, east 1, south 2, west 3), and bit 3 indicates an active native scene fade. Checkpoints wait for that fade to finish before sending the next interaction. The controller waits for that measured heading before interacting.
+
+The decoder samples the interior of each bit to avoid edge filtering, then validates the magic, version, CRC, ranges and frame progression. A separate crop check rejects a blank world even if the HUD and observer still render. It accepts raw 4:3 framebuffer images at native or scaled resolution. Wrong aspect ratio, missing panel, ambiguous bits, a checksum mismatch, a stopped frame counter, unexpected room, navigation obstruction or story timeout all fail the run.
+
+This is observation only. No command channel, RAM write, seed override, battle bypass, imported savestate or injected story completion exists in the panel. It stays usable through room changes and can remain visible over fades for diagnostics.
+
+## Generic JSON diagnostics
+
+`tools/retroarch_e2e.py` remains available for focused, bounded input/capture experiments:
+
+```sh
+make test-scripted-rom
+python3 tools/retroarch_e2e.py tests/rom_scenarios/pallet_smoke.json --check-only
+```
+
+The current `pallet_smoke.json` is a short bedroom wake/walk diagnostic using the installed analog W binding. It is weaker than the state-aware opening test and does not establish the complete quest.
+
+The `battle_smoke.json` and `battle_probe.json` fixtures are labelled **legacy**. They reproduce the earlier ROM's instant-starter/debug encounter flow and should not be run against the new bedroom-opening ROM.
+
+JSON scenarios accept these actions:
+
+| Actions | Purpose |
+| --- | --- |
+| `wait`, `frames` | Time-based wait or paused frame stepping |
+| `tap`, `press`, `release`, `release_all`, `stick` | Local Remote RetroPad input |
+| `key_hold`, `key_chord` | Keyboard events posted to the owned macOS PID |
+| `screenshot` | Capture actual raw framebuffer PNG |
+| `assert_visible`, `assert_changed`, `assert_movement` | Pixel checks, including movement exceeding idle drift |
+| `assert_text`, `assert_hp_decreased`, `assert_no_fault` | macOS Vision OCR checks |
+| `assert_status`, `pause`, `resume` | Emulator status/control |
+
+`Network Commands` and `Remote RetroPad` are separate local UDP interfaces. The full opening uses Network Commands for status/capture and targeted keyboard input for reliable movement. See [RetroArch's command API](https://github.com/libretro/RetroArch/blob/master/command.h), [libretro input IDs](https://github.com/libretro/libretro-common/blob/master/include/libretro.h) and [ParaLLEl core options](https://docs.libretro.com/library/parallel_n64/).
+
+## Limits
+
+The controller pulses are wall-clock-driven and corrected from observed position; this is not a frame-perfect deterministic input movie. It exercises a locally supplied ROM and configured emulator, not real hardware. CI runs offline protocol, route and failure tests plus native compilation; it does not download a ROM or claim a live emulator pass.
+
+A passing state trace proves the named sequence occurred in the ROM, but final camera framing, artwork, audio and performance also need visual/hardware review. The screenshots are kept for that purpose.

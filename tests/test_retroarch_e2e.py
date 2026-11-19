@@ -27,7 +27,8 @@ class ScenarioTests(unittest.TestCase):
 
     def test_pallet_smoke_scenario_is_valid(self):
         scenario = e2e.validate_scenario(self.example)
-        self.assertEqual(len(scenario["steps"]), 14)
+        self.assertTrue(any(step.get("keycode")==49 for step in scenario["steps"]),
+                        "Bedroom diagnostic must wake Red before testing movement")
         self.assertEqual(scenario["steps"][-1]["action"], "assert_status")
 
     def test_rejects_unknown_steps(self):
