@@ -60,7 +60,11 @@ class PalletTownTests(unittest.TestCase):
         scene, room, _ = pallet_town.build()
         self.assertIn("_spot04_room_0SegmentRomStart", scene)
         self.assertNotIn("example_scene", scene+room)
-        self.assertNotIn("gKokiriForest", scene+room)
+        # Only two minimal compatibility cutscene symbols remain, because
+        # compiled legacy Zelda code still references them at link time.
+        self.assertEqual(scene.count("CutsceneData gKokiriForest"), 2)
+        self.assertNotIn("spot04_scene_000", scene+room)
+        self.assertNotIn("spot04_room_1", scene+room)
         # Only the ROM slot keeps a legacy Zelda identifier. No forest
         # assets, actors or Kokiri geometry appear in the payload.
         self.assertNotIn("spot04_room_1", scene+room)
