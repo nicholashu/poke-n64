@@ -89,16 +89,40 @@ class OverlayTests(unittest.TestCase):
         self.assertNotIn("self->drawBoxes = 0;", runtime.split("static void DrawWorld", 1)[1].split("static void Panel", 1)[0])
         self.assertIn("if (v == NULL) return;", runtime)
 
-    def test_control_boot_keeps_stock_transition_and_different_game_id(self) -> None:
+    def test_control_boot_is_pristine_upstream_with_no_pokemon_overlay(self) -> None:
+        original = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=self.engine, text=True,
+        )
+        self.assertEqual(original, "")
         with contextlib.redirect_stdout(io.StringIO()):
             bootstrap.install(self.engine, boot_mode="control")
-        transition = (self.engine / "src/code/title_setup.c").read_text()
-        self.assertIn("SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);", transition)
-        self.assertNotIn("SET_NEXT_GAMESTATE(&this->state, Poke_Init, PokeState);", transition)
-        header = (self.engine / "src/makerom/rom_header.s").read_text()
-        self.assertIn('ROM_NAME("POKE N64 CONTROL")', header)
-        self.assertIn('GAME_ID("PC")', header)
-        self.assertIn("poke_state.o", (self.engine / "spec/spec").read_text())
+        self.assertFalse((self.engine / bootstrap.MANIFEST).exists())
+        self.assertNotIn("poke_state", (self.engine / "spec/spec").read_text())
+        self.assertNotIn("POKE", (self.engine / "src/makerom/rom_header.s").read_text())
+        self.assertIn(
+            "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
+            (self.engine / "src/code/title_setup.c").read_text(),
+        )
+        self.assertEqual(
+            subprocess.check_output(
+                ["git", "status", "--porcelain", "--untracked-files=no"],
+                cwd=self.engine, text=True,
+            ), "",
+        )
+
+    def test_control_boot_rejects_a_previous_pokemon_overlay(self) -> None:
+        self.install()
+        with self.assertRaisesRegex(RuntimeError, "already contains a Pokémon overlay"):
+            bootstrap.install(self.engine, boot_mode="control")
+
+    def test_control_boot_rejects_edited_upstream_files_without_overwriting(self) -> None:
+        target = self.engine / "src/code/title_setup.c"
+        target.write_text(target.read_text() + "/* local edit */\\n")
+        before = target.read_text()
+        with self.assertRaisesRegex(RuntimeError, "modified tracked files"):
+            bootstrap.install(self.engine, boot_mode="control")
+        self.assertEqual(target.read_text(), before)
 
     def test_refreshes_own_sources_but_keeps_unrelated_files(self) -> None:
         self.install()
