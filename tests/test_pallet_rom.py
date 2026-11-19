@@ -204,7 +204,16 @@ class ImportCommandTests(unittest.TestCase):
             rom=directory/'source (test).gb';rom.write_bytes(data)
             out=directory/'output'
             argv=['pallet_rom.py','--rom',str(rom),'--output',str(out)]
-            with patch.object(gen1_rom,'PROFILES',(profile,)),redirect_stdout(io.StringIO()):
+            # The synthetic binary only models the outdoor map. The complete
+            # production importer additionally decodes four real interiors and
+            # source-backed dialogue; stub those boundaries for this I/O test.
+            sample_dialogue = {"talks": {"TALK_MOM":"A"}, "ball":{
+                "bulbasaur":"B", "charmander":"C", "squirtle":"D"},
+                "result":{"won":"E","lost":"F"},"sources":{}}
+            with patch.object(gen1_rom,'PROFILES',(profile,)), \
+                 patch.object(gen1_rom,'extract_room',return_value={"fictional": True}), \
+                 patch('opening_rom.extract_opening_texts',return_value=sample_dialogue), \
+                 redirect_stdout(io.StringIO()):
                 with patch.object(sys,'argv',argv+['--check']):
                     pallet_rom.main()
                 self.assertFalse(out.exists())
