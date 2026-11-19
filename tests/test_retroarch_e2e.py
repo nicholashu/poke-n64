@@ -86,6 +86,30 @@ class ScenarioTests(unittest.TestCase):
                     {"action": "key_hold", "keycode": 13, "seconds": seconds},
                 ]})
 
+    def test_key_chords_are_safe_and_battle_probe_is_valid(self):
+        scenario = json.loads(
+            (ROOT / "tests/rom_scenarios/battle_probe.json").read_text()
+        )
+        steps = e2e.validate_scenario(scenario)["steps"]
+        chords = [step for step in steps if step["action"] == "key_chord"]
+        # ParaLLEl independent C mapping: E + Left, then E + R + Shift.
+        self.assertEqual(chords[0]["keycodes"], [14, 123])
+        self.assertEqual(chords[1]["keycodes"], [14, 15, 56])
+        self.assertEqual(
+            [step["keycode"] for step in steps if step["action"] == "key_hold"],
+            [49, 49],
+        )
+        for keys in ([], [13, 13], [128], [-1], [13, True], "14", None, [1]*7):
+            with self.assertRaisesRegex(ValueError, "key_chord requires"):
+                e2e.validate_scenario({"name": "bad", "steps": [
+                    {"action": "key_chord", "keycodes": keys, "seconds": 0.3},
+                ]})
+        for seconds in (-1, 0, 91, True, "1", None):
+            with self.assertRaisesRegex(ValueError, "key_chord seconds"):
+                e2e.validate_scenario({"name": "bad", "steps": [
+                    {"action": "key_chord", "keycodes": [14, 123], "seconds": seconds},
+                ]})
+
     def test_stick_coordinates_and_frame_limits(self):
         for bad in (32768, -32769, 1.2, None):
             with self.assertRaises(ValueError):
