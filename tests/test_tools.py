@@ -34,7 +34,8 @@ class OverlayTests(unittest.TestCase):
         fixtures = {
             "src/code/graph.c": '#include "setup_state.h"\n',
             "src/code/z_game_dlftbls.c": '#include "setup_state.h"\n',
-            "src/code/title_setup.c": '#include "setup_state.h"\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
+            "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
+            "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
             "include/tables/gamestate_table.h": 'DEFINE_GAMESTATE_INTERNAL(Setup, GAMESTATE_SETUP)\n',
             "spec/spec": '    include "$(BUILD_DIR)/src/code/title_setup.o"\n',
             "src/makerom/rom_header.s": 'ROM_NAME("THE LEGEND OF ZELDA")\nGAME_ID("ZL")\n',
@@ -45,7 +46,8 @@ class OverlayTests(unittest.TestCase):
             target = self.engine / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
-        for name in ("native/poke_state.c", "native/poke_state.h", "include/poke.h", "src/core.c", "src/save.c"):
+        for name in ("native/poke_state.c", "native/poke_state.h", "native/oot_conversion.c",
+                     "native/oot_conversion.h", "include/poke.h", "src/core.c", "src/save.c"):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(f"/* project fixture: {name} */\n")
@@ -117,6 +119,37 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("The saved position may be elsewhere.", runtime)
         self.assertIn("if (self->wasInBattle) {", runtime)
         self.assertIn("static void PrintShort(", runtime)
+
+    def test_oot_conversion_uses_stock_playstate_without_custom_gamestate(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            bootstrap.install(self.engine, boot_mode="oot")
+        entry = (self.engine / "src/code/title_setup.c").read_text()
+        self.assertIn("Sram_InitNewSave();", entry)
+        self.assertIn("ENTR_KOKIRI_FOREST_0", entry)
+        self.assertIn("SET_NEXT_GAMESTATE(&this->state, Play_Init, PlayState);", entry)
+        self.assertNotIn("Poke_Init, PokeState", entry)
+        code = (self.engine / "src/code/z_play.c").read_text()
+        for hook in ("PokeOot_OnSceneEnter(this);", "PokeOot_Update(this);", "PokeOot_Draw(this);"):
+            self.assertIn(hook, code)
+        spec = (self.engine / "spec/spec").read_text()
+        self.assertIn("poke_oot.o", spec)
+        self.assertIn("poke_core.o", spec)
+        self.assertNotIn("poke_state.o", spec)
+        self.assertNotIn("GAMESTATE_POKE", (self.engine / "include/tables/gamestate_table.h").read_text())
+        self.assertTrue((self.engine / "include/poke_oot.h").exists())
+        self.assertTrue((self.engine / "src/code/poke_oot.c").exists())
+        first = (self.engine / bootstrap.MANIFEST).read_bytes()
+        with contextlib.redirect_stdout(io.StringIO()):
+            bootstrap.install(self.engine, boot_mode="oot")
+        self.assertEqual((self.engine / bootstrap.MANIFEST).read_bytes(), first)
+
+    def test_conversion_never_overwrites_unrelated_source_edits(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            bootstrap.install(self.engine, boot_mode="oot")
+        target = self.engine / "src/code/z_play.c"
+        target.write_text(target.read_text() + "/* local experimental change */\n")
+        with self.assertRaisesRegex(RuntimeError, "Refusing to overwrite"):
+            bootstrap.install(self.engine, boot_mode="oot")
 
     def test_control_boot_is_pristine_upstream_with_no_pokemon_overlay(self) -> None:
         original = subprocess.check_output(
