@@ -15,17 +15,34 @@ typedef enum { TALK_NONE, TALK_WAKE, TALK_OAK_WARNING, TALK_LAB_WELCOME,
                TALK_TV, TALK_BOOKS, TALK_DAISY, TALK_GIRL, TALK_FISHER,
                TALK_RED_SIGN, TALK_BLUE_SIGN, TALK_TOWN_SIGN, TALK_LAB_SIGN,
                TALK_OAK_AWAY, TALK_PICK_FIRST, TALK_ROUTE_END, TALK_LAB_AIDE,
-               TALK_BLUE, TALK_OAK_DONE, TALK_PC_FULL } PokeIntroTalk;
+               TALK_BLUE, TALK_OAK_DONE, TALK_PC_FULL,
+               TALK_DAISY_WALK, TALK_TOWN_MAP, TALK_LAB_GIRL } PokeIntroTalk;
 typedef struct { uint8_t room, x, z, destination, spawn; } PokeIntroWarp;
 typedef struct { uint8_t width, height; const char* name; const char* const* rows; } PokeIntroMap;
+typedef struct {
+    uint8_t room, id, x, z, sprite, text_id, initially_visible;
+} PokeIntroObject;
+typedef struct { uint8_t room, x, z, text_id; } PokeIntroSign;
+extern const PokeIntroObject gPokeIntroObjects[];
+extern const unsigned gPokeIntroObjectCount;
+extern const PokeIntroSign gPokeIntroSigns[];
+extern const unsigned gPokeIntroSignCount;
 extern const PokeIntroMap gPokeIntroMaps[INTRO_ROOM_COUNT];
 extern const PokeIntroWarp gPokeIntroWarps[];
 extern const unsigned gPokeIntroWarpCount;
+
+/* Present only in the ROM-import build. Generated tables contain text
+ * extracted locally from the supported Red/Blue cartridge. */
+extern const unsigned gPokeOpeningTextEnabled;
+extern const char* const gPokeOpeningTalks[TALK_LAB_GIRL + 1];
+extern const char* const gPokeOpeningStarters[3]; /* Bulbasaur, Charmander, Squirtle */
+extern const char* const gPokeOpeningResults[2]; /* win, loss */
 
 typedef struct {
     uint8_t stage, room, talk, selection, starter, rival;
     uint8_t warp_pending, warp_room, warp_spawn;
     uint8_t escort_step, pc_taken, outcome, warp_armed;
+    uint8_t text_page;
     uint8_t reposition, reposition_x, reposition_z;
     int8_t look_x, look_z;
 } PokeIntro;

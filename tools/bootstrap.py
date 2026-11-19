@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 from pallet_town import build_segments as build_pallet_segments, unused_room_source
 from kanto_layout import ORDER, ROOMS, core_source as opening_core_source, native_header
@@ -19,6 +20,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = json.loads((ROOT / "native/upstream.json").read_text())
 DEFAULT_ENGINE = ROOT / "build/engine"
+DEFAULT_PALLET_ENGINE = ROOT / "build/engine-pallet"
 MANIFEST = ".poke-overlay.json"
 
 
@@ -52,9 +54,28 @@ def ensure_checkout(engine: Path) -> None:
         raise RuntimeError(f"Expected HackerOoT {LOCK['commit']}, found {actual}. Use a new --engine directory.")
 
 
-def install(engine: Path, boot_mode: str = "poke") -> None:
+def compile_pokemon_rom(path: Path) -> dict:
+    """Validate a supported local GB image and compile before any engine writes.
+
+    The compiler remains a lazy import so the ordinary ROM-free prototype has
+    no dependency on generated or user-supplied Pokémon data.
+    """
+    if path.stat().st_size != 1024 * 1024:
+        raise RuntimeError("Expected a 1 MiB English Pokémon Red or Blue ROM.")
+    from pallet_rom import compile_pallet
+    try:
+        return compile_pallet(path.read_bytes())
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def install(engine: Path, boot_mode: str = "poke", *,
+            pokemon_rom: Path | None = None) -> None:
     if boot_mode not in ("poke", "control", "oot"):
         raise ValueError("Unknown boot mode")
+    if pokemon_rom is not None and boot_mode != "oot":
+        raise RuntimeError("--pokemon-rom requires the OoT conversion mode.")
+    imported = compile_pokemon_rom(pokemon_rom) if pokemon_rom is not None else None
     ensure_checkout(engine)
     if boot_mode == "control":
         # A real baseline means *zero* Pokémon source, linker or header edits.
@@ -96,6 +117,9 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         outputs[path] = replace_once(text, anchor, replacement, path).encode()
 
     if boot_mode == "oot":
+        # Even with a user-supplied Red/Blue map, boot in Red's bedroom.
+        # The imported exterior is one room of the complete opening.
+        entrance = "ENTR_KNOW_IT_ALL_BROS_HOUSE_0"
         # Total conversion uses the REAL Zelda PlayState and camera, not
         # our custom standalone GameState. Kokiri Forest is temporary.
         patch("src/code/title_setup.c", '#include "save.h"',
@@ -104,7 +128,7 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               "    SaveContext_Init();\n"
               "    Sram_InitNewSave();\n"
               "    gSaveContext.fileNum = 0xFF; /* RAM-only engineering save */\n"
-              "    gSaveContext.save.entranceIndex = ENTR_KNOW_IT_ALL_BROS_HOUSE_0;\n"
+              f"    gSaveContext.save.entranceIndex = {entrance};\n"
               "    gSaveContext.save.linkAge = LINK_AGE_CHILD;\n"
               "    gSaveContext.save.cutsceneIndex = CS_INDEX_NONE;\n"
               "    gSaveContext.save.dayTime = CLOCK_TIME(10, 0);\n"
@@ -112,16 +136,18 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         patch("src/code/title_setup.c",
               "SET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);",
               "SET_NEXT_GAMESTATE(&this->state, Play_Init, PlayState);")
+        patch("src/code/z_camera.c", '#include "play_state.h"',
+              '#include "play_state.h"\n#include "poke_oot.h"')
         patch("src/code/z_camera.c",
               "    if (sOOBTimer < 200) {\n"
               "        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);",
-              "    /* Pallet's provisional scene still uses the Kokiri scene ID.\n"
+              "    /* Any of our five new scene slots can encounter an unset camera\n"
               "     * Recover from the invalid camera-setting table observed on\n"
               "     * the first playable frame (TLB load from near NULL). This\n"
-              "     * is deliberately scoped to the Pokémon total conversion.\n"
+              "     * is deliberately scoped to the five Pokémon scenes.\n"
               "     */\n"
               "    if (camera->play != NULL &&\n"
-              "        camera->play->sceneId == SCENE_KOKIRI_FOREST &&\n"
+              "        PokeOot_IsScene(camera->play->sceneId) &&\n"
               "        (camera->setting <= CAM_SET_NONE || camera->setting >= CAM_SET_MAX ||\n"
               "         camera->mode < CAM_MODE_NORMAL || camera->mode >= CAM_MODE_MAX ||\n"
               "         sCameraSettings[camera->setting].cameraModes == NULL)) {\n"
@@ -165,6 +191,9 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_oot.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_import.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_native.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_data.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_intro.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_world.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_red_actor.o"\n'
@@ -205,9 +234,19 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
             outputs["src/code/poke_pallet_unused_room_" + str(room_index) + ".c"] = (
                 unused_room_source(room_index).encode()
             )
-        pallet_scene_head, pallet_scene, pallet_room_head, pallet_room, _ = (
-            build_pallet_segments()
-        )
+        if imported is None:
+            pallet_scene_head, pallet_scene, pallet_room_head, pallet_room, _ = (
+                build_pallet_segments()
+            )
+            outputs["src/code/poke_pallet_data.c"] = (
+                ROOT / "native/pallet_import_stub.c"
+            ).read_bytes()
+        else:
+            pallet_scene_head = imported["scene_header"]
+            pallet_scene = imported["scene"]
+            pallet_room_head = imported["room_header"]
+            pallet_room = imported["room"]
+            outputs["src/code/poke_pallet_data.c"] = imported["data_source"].encode()
         outputs["src/code/poke_pallet_scene_header.c"] = pallet_scene_head.encode()
         outputs["src/code/poke_pallet_scene.c"] = pallet_scene.encode()
         outputs["src/code/poke_pallet_room_header.c"] = pallet_room_head.encode()
@@ -215,7 +254,9 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         # Four existing single-room interior slots, retaining DMA/scene IDs.
         for name in ORDER[1:]:
             room=ROOMS[name]; segment=room["segment"]
-            sh,sb,rh,rb,_=build_pallet_segments(name)
+            sh,sb,rh,rb,_=build_pallet_segments(
+                name, (imported.get("world", {}).get("rooms") or {}).get(name)
+                if imported is not None else None)
             stem="poke_"+segment
             for suffix,data in (("_scene_header",sh),("_scene",sb),("_room_header",rh),("_room",rb)):
                 outputs["src/code/"+stem+suffix+".c"]=data.encode()
@@ -225,7 +266,8 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
                       'include "$(BUILD_DIR)/assets/scenes/indoors/'+segment+'/'+old+'.o"',
                       'include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'_header.o"\n'
                       '    include "$(BUILD_DIR)/src/code/'+stem+'_'+kind+'.o"')
-        outputs["src/code/poke_world.c"]=opening_core_source().encode()
+        outputs["src/code/poke_world.c"]=opening_core_source(
+            imported.get("world", {}).get("rooms") if imported is not None else None).encode()
         outputs["src/code/poke_red_mesh.c"]=character_source().encode()
         outputs["include/poke_world_native.h"]=native_header().encode()
         patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
@@ -270,6 +312,10 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         copies = {
             "native/oot_conversion.c": "src/code/poke_oot.c",
             "native/oot_conversion.h": "include/poke_oot.h",
+            "include/poke_pallet_import.h": "include/poke_pallet_import.h",
+            "src/pallet_import.c": "src/code/poke_pallet_import.c",
+            "native/pallet_import.h": "include/poke_pallet_native.h",
+            "native/pallet_import.c": "src/code/poke_pallet_native.c",
             "native/stadium_asset.h": "include/stadium_asset.h",
             "native/red_actor.h": "include/poke_red.h",
             "native/red_actor.c": "src/code/poke_red_actor.c",
@@ -295,7 +341,13 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
                   ROOT / "native/stadium_asset_stub.c")
         outputs["src/code/poke_stadium_asset.c"] = source.read_bytes()
     for source, target in copies.items():
-        outputs[target] = (ROOT / source).read_bytes()
+        content = (ROOT / source).read_bytes()
+        if (source == "src/core.c" and imported is not None
+                and imported.get("world", {}).get("battle") is not None):
+            from battle_rom import apply_to_core
+            content = apply_to_core(content.decode(),
+                                    imported["world"]["battle"]).encode()
+        outputs[target] = content
     # Validate every write first: fail without partly applying an overlay.
     for path, desired in outputs.items():
         dest = engine / path
@@ -320,11 +372,16 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--engine", type=Path, default=DEFAULT_ENGINE)
+    parser.add_argument("--engine", type=Path)
     parser.add_argument("--boot-mode", choices=("poke", "control", "oot"), default="poke")
+    pokemon_rom = os.environ.get("POKE_POKEMON_ROM")
+    parser.add_argument("--pokemon-rom", type=Path,
+                        default=Path(pokemon_rom) if pokemon_rom else None,
+                        help="generate Pallet Town from a supported local Red/Blue image")
     args = parser.parse_args()
+    engine = args.engine or (DEFAULT_PALLET_ENGINE if args.pokemon_rom else DEFAULT_ENGINE)
     try:
-        install(args.engine.resolve(), boot_mode=args.boot_mode)
+        install(engine.resolve(), boot_mode=args.boot_mode, pokemon_rom=args.pokemon_rom)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         sys.exit(f"Bootstrap failed: {exc}")
 

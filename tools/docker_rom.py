@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 
-from bootstrap import ROOT
+from bootstrap import ROOT, compile_pokemon_rom
 from build_rom import select_rom
 
 IMAGE = "poke-n64-build"
@@ -71,18 +71,25 @@ def docker_environment() -> tuple[str, str]:
 
 def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
                   control_boot: bool = False, oot_conversion: bool = False,
-                  refresh_setup: bool = False) -> None:
+                  refresh_setup: bool = False, pokemon_rom: Path | None = None) -> None:
     if control_boot and oot_conversion:
         raise RuntimeError("The control and OoT conversion modes are mutually exclusive.")
     if base is None and not check_tools:
         raise RuntimeError("A validated base ROM is required.")
+    if pokemon_rom is not None:
+        if not oot_conversion:
+            raise RuntimeError("--pokemon-rom requires --oot-conversion.")
+        # Reject unsupported/truncated images before contacting Docker or
+        # downloading its image. The container independently validates again.
+        compile_pokemon_rom(pokemon_rom)
     executable, platform = docker_environment()
     architecture = platform.split("/")[1]
     image = f"{IMAGE}-{architecture}"
     # The original '-control' checkout was already patched by earlier builds.
     # Use a fresh '-stock' directory for a true unmodified upstream baseline.
     engine = (f"/project/build/docker-engine-{architecture}" +
-              ("-stock" if control_boot else "-oot" if oot_conversion else ""))
+              ("-pallet" if pokemon_rom is not None else
+               "-stock" if control_boot else "-oot" if oot_conversion else ""))
     jobs = max(1, jobs)
     print(f"Using native Docker platform: {platform}", flush=True)
     # Only the build recipe is sent to the Docker image builder. Source code,
@@ -102,12 +109,16 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
     roms = ROOT / "roms"
     if roms.is_dir():
         command += ["--mount", bind_mount(roms.resolve(), "/project/roms", readonly=True)]
+    if pokemon_rom is not None:
+        command += ["--mount", bind_mount(pokemon_rom.resolve(), "/inputs/pokemon.gb", readonly=True)]
     if check_tools:
         # Exercise the actual host tools and native Python dependencies on each
         # CPU. Object compilation alone cannot reveal host architecture failures.
         native_check = ["python3", "tools/check_native.py", "--require-mips", "--engine", engine]
         if oot_conversion:
             native_check.append("--oot-conversion")
+        if pokemon_rom is not None:
+            native_check += ["--pokemon-rom", "/inputs/pokemon.gb"]
         checks = [
             ["python3", "tools/build_env.py"],
             native_check,
@@ -130,10 +141,12 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
         command.append("--control-boot")
     if oot_conversion:
         command.append("--oot-conversion")
+    if pokemon_rom is not None:
+        command += ["--pokemon-rom", "/inputs/pokemon.gb"]
     if refresh_setup:
         command.append("--refresh-setup")
     subprocess.run(command, cwd=ROOT, check=True)
-    label = ("poke-n64-control" if control_boot else
+    label = ("poke-n64-pallet" if pokemon_rom is not None else "poke-n64-control" if control_boot else
              "poke-n64-oot" if oot_conversion else "poke-n64")
     print(f"Outputs: {ROOT / 'build' / (label + '.z64')} and {ROOT / 'build' / (label + '.bps')}")
 
@@ -149,21 +162,35 @@ def main() -> None:
                         help="build a stock-boot control ROM alongside the custom game")
     parser.add_argument("--oot-conversion", action="store_true",
                         help="build the PlayState-based Pokémon total conversion")
+    pokemon_rom = os.environ.get("POKE_POKEMON_ROM")
+    parser.add_argument("--pokemon-rom", type=Path,
+                        default=Path(pokemon_rom) if pokemon_rom else None,
+                        help="generate Pallet Town from a supported local Red/Blue image")
+    parser.add_argument("--require-pokemon-rom", action="store_true",
+                        help="fail instead of building the prototype if no Pokémon image was given")
     parser.add_argument("--refresh-setup", action="store_true",
                         help="rerun the complete upstream OoT extraction even if cached")
     parser.add_argument("--check-tools", action="store_true",
                         help="build the image and compile native objects without a ROM")
     args = parser.parse_args()
+    if args.require_pokemon_rom and args.pokemon_rom is None:
+        raise RuntimeError("This target requires POKEMON_ROM=/path/to/pokemon-red.gb or --pokemon-rom.")
+    if args.pokemon_rom is not None and not args.oot_conversion:
+        raise RuntimeError("--pokemon-rom requires --oot-conversion.")
+    if args.control_boot and args.oot_conversion:
+        raise RuntimeError("The control and OoT conversion modes are mutually exclusive.")
+    overrides = {"pokemon_rom": args.pokemon_rom} if args.pokemon_rom is not None else {}
     if args.check_tools:
         if args.oot_conversion:
-            run_in_docker(None, args.jobs, check_tools=True, oot_conversion=True)
+            run_in_docker(None, args.jobs, check_tools=True, oot_conversion=True, **overrides)
         else:
             run_in_docker(None, args.jobs, check_tools=True)
     else:
         # Fail on missing or mismatched input before any Docker downloads/writes.
         path, _ = select_rom(args.rom, args.roms_dir)
         print(f"Validated base ROM: {path}", flush=True)
-        overrides = {"refresh_setup": True} if args.refresh_setup else {}
+        if args.refresh_setup:
+            overrides["refresh_setup"] = True
         run_in_docker(path, args.jobs, control_boot=args.control_boot,
                       oot_conversion=args.oot_conversion, **overrides)
 

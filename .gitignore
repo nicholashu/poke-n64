@@ -18,6 +18,10 @@ __pycache__/
 *.V64
 *.rom
 *.ROM
+*.gb
+*.GB
+*.gbc
+*.GBC
 *.bps
 *.ips
 /baseroms/

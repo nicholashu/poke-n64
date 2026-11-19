@@ -38,7 +38,8 @@ class OverlayTests(unittest.TestCase):
             "src/code/title_setup.c": '#include "setup_state.h"\n#include "save.h"\n    SaveContext_Init();\nSET_NEXT_GAMESTATE(&this->state, ConsoleLogo_Init, ConsoleLogoState);\n',
             "src/code/z_play.c": '#include "play_state.h"\n    this->gameplayFrames = 0;\n}\n        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);\n    Play_Draw(this);\n\n    PLAY_LOG(4587);\n',
             "src/code/z_player_lib.c": '#include "player.h"\n    return false;\n}\n\ns32 Player_OverrideLimbDrawGameplayFirstPerson\n    return false;\n}\n\ns32 Player_OverrideLimbDrawGameplayCrawling\n',
-            "src/code/z_camera.c": '    if (sOOBTimer < 200) {\n'
+            "src/code/z_camera.c": '#include "play_state.h"\n'
+                                   '    if (sOOBTimer < 200) {\n'
                                    '        sCameraFunctions[sCameraSettings[camera->setting].cameraModes[camera->mode].funcIdx](camera);\n',
             "include/tables/scene_table.h": 'DEFINE_SCENE(spot04_scene, g_pn_31, SCENE_KOKIRI_FOREST, SDC_KOKIRI_FOREST, 0, 0)\n',
             "spec/scenes_n64.inc": '    include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"\n'
@@ -68,7 +69,9 @@ class OverlayTests(unittest.TestCase):
                      "native/oot_conversion.h", "native/stadium_asset.h",
                      "native/stadium_asset_stub.c", "native/red_actor.c", "native/red_actor.h",
                      "include/poke_intro.h", "src/intro.c", "include/poke.h",
-                     "src/core.c", "src/save.c"):
+                     "src/core.c", "src/save.c", "include/poke_pallet_import.h",
+                     "src/pallet_import.c", "native/pallet_import.c",
+                     "native/pallet_import.h", "native/pallet_import_stub.c"):
             target = self.project / name
             target.parent.mkdir(parents=True, exist_ok=True)
             if name in ("native/stadium_asset.h", "native/stadium_asset_stub.c"):
@@ -187,13 +190,18 @@ class OverlayTests(unittest.TestCase):
         for obj in ("poke_intro.o","poke_world.o","poke_red_actor.o","poke_red_mesh.o"):
             self.assertIn(obj,spec)
         self.assertIn("PokeOot_ResolveSpawn(sceneId, spawn)",code)
+        native = (ROOT / "native/oot_conversion.c").read_text()
+        self.assertNotIn("eye.y=at.y+550",native)
+        self.assertNotIn("if (room!=INTRO_PALLET)",native)
+        self.assertIn("CAM_ID_MAIN",native)
         player=(self.engine / "src/code/z_player_lib.c").read_text()
         self.assertEqual(player.count("PokeRed_HideLinkLimb(play, dList);"),2)
         for name in bootstrap.ORDER[1:]:
             segment=bootstrap.ROOMS[name]["segment"]
             self.assertIn("poke_"+segment+"_scene_header.o",(self.engine/"spec/scenes_n64.inc").read_text())
         camera = (self.engine / "src/code/z_camera.c").read_text()
-        self.assertIn("sceneId == SCENE_KOKIRI_FOREST", camera)
+        self.assertIn("PokeOot_IsScene(camera->play->sceneId)", camera)
+        self.assertIn('#include "poke_oot.h"', camera)
         self.assertIn("camera->setting <= CAM_SET_NONE", camera)
         self.assertIn("camera->mode = CAM_MODE_NORMAL", camera)
         scene_table = (self.engine / "include/tables/scene_table.h").read_text()

@@ -324,10 +324,26 @@ def _collision_data(geom: Geometry):
     return vertices, polys
 
 
-def scene_source(geom: Geometry) -> str:
+def scene_source(geom: Geometry, *, bounds=None, spawn=None, spawn_list=None) -> str:
+    """Emit a scene with explicit bounds/spawn for generated maps as well.
+
+    Defaults preserve every opening room and its entrance list. ROM importers
+    supply their own bounds and outdoor spawn without changing module globals.
+    """
     vertices, polys = _collision_data(geom)
-    room=ROOMS[geom.room_name]
-    x1,z1,x2,z2=geom.bounds
+    room_name=getattr(geom,"room_name","PalletTown")
+    x1,z1,x2,z2=bounds if bounds is not None else geom.bounds
+    if spawn_list is not None:
+        if spawn is not None:
+            raise ValueError("Use either one preview spawn or the full opening spawn list")
+        spawns=list(spawn_list)
+        if not 1<=len(spawns)<=8 or any(len(entry)!=4 for entry in spawns):
+            raise ValueError("Native scene requires 1..8 (x,y,z,yaw) spawn entries")
+    elif spawn is None:
+        spawns=[(*point(room_name,x,z),yaw) for x,z,yaw in ROOMS[room_name]["spawns"]]
+        spawns=[(x,0,z,yaw) for x,z,yaw in spawns]
+    else:
+        spawns=[(*spawn,180)]
     lines = [
         '/* Original Pallet Town scene, replacing the Kokiri staging scene slot. */',
         '#include "ultra64.h"',
@@ -358,7 +374,7 @@ def scene_source(geom: Geometry) -> str:
         '    SCENE_CMD_SKYBOX_SETTINGS(1, 0, LIGHT_MODE_TIME),',
         '    SCENE_CMD_ENV_LIGHT_SETTINGS(4, gPalletLights),',
         '    SCENE_CMD_SPAWN_LIST(gPalletEntrances),',
-        f'    SCENE_CMD_PLAYER_ENTRY_LIST({len(room["spawns"])}, gPalletPlayerSpawns),',
+        f'    SCENE_CMD_PLAYER_ENTRY_LIST({len(spawns)}, gPalletPlayerSpawns),',
         '    SCENE_CMD_END(),',
         '};', '',
         'RomFile gPalletRoomList[] = {',
@@ -366,9 +382,9 @@ def scene_source(geom: Geometry) -> str:
         '      (uintptr_t)_spot04_room_0SegmentRomEnd },',
         '};',
         'ActorEntry gPalletPlayerSpawns[] = {',
-        *[f'    {{ ACTOR_PLAYER, {{ {point(geom.room_name,x,z)[0]}, 0, {point(geom.room_name,x,z)[1]} }}, {{ 0, DEG_TO_BINANG({yaw}.0f), 0 }}, PLAYER_PARAMS(PLAYER_START_MODE_IDLE, PLAYER_START_BG_CAM_DEFAULT) }},' for x,z,yaw in room["spawns"]],
+        *[f'    {{ ACTOR_PLAYER, {{ {x}, {y}, {z} }}, {{ 0, DEG_TO_BINANG({yaw}.0f), 0 }}, PLAYER_PARAMS(PLAYER_START_MODE_IDLE, PLAYER_START_BG_CAM_DEFAULT) }},' for x,y,z,yaw in spawns],
         '};',
-        'Spawn gPalletEntrances[] = { '+', '.join('{ '+str(i)+', 0 }' for i in range(len(room["spawns"])))+' };',
+        'Spawn gPalletEntrances[] = { '+', '.join('{ '+str(i)+', 0 }' for i in range(len(spawns)))+' };',
         '/* Compatibility only: these Zelda cutscenes are still referenced by', 
         ' * compiled but unreachable Zelda code and actor overlays. Never', 
         ' * trigger them in Pallet Town. Minimal valid scripts preserve the', 
@@ -417,7 +433,7 @@ def scene_source(geom: Geometry) -> str:
         '};', '',
     ]
     source='\n'.join(lines)
-    if geom.room_name!="PalletTown":
+    if room_name!="PalletTown":
         # Retain compatibility symbols only in the exterior segment.
         start=source.index('/* Compatibility only')
         end=source.index('EnvLightSettings gPalletLights[4] =',start)
@@ -548,8 +564,24 @@ def split_segment_header(source: str, name: str) -> tuple[str, str]:
     return header, body
 
 
-def build_segments(room_name="PalletTown"):
-    scene,room,metadata=build(room_name)
+def build_segments(room_name="PalletTown", imported_room=None):
+    if imported_room is None:
+        scene,room,metadata=build(room_name)
+    else:
+        old=ROOMS[room_name]
+        if (imported_room["width"], imported_room["height"]) != tuple(old["dimensions"]):
+            raise ValueError(f"{room_name} ROM dimensions differ from N64 scene")
+        replacement=dict(old)
+        replacement["static_walkable_rows"]=[
+            ''.join('.' if cell["walkable"] else '#' for cell in row)
+            for row in imported_room["cells"]]
+        # Props, lighting and furniture are our own visual interpretation.
+        # Only source-ROM collision geometry determines gameplay boundaries.
+        ROOMS[room_name]=replacement
+        try:
+            scene,room,metadata=build(room_name)
+        finally:
+            ROOMS[room_name]=old
     prefix="gPallet" if room_name=="PalletTown" else "g"+room_name
     scene_header,scene_body=split_segment_header(scene,prefix+"SceneHeader")
     room_header,room_body=split_segment_header(room,prefix+"RoomHeader")

@@ -1,16 +1,65 @@
 # Pokémon N64
 
-A native Nintendo 64 Pokémon RPG built on pinned [HackerOoT](https://github.com/HackerN64/HackerOoT). The current `feat/pallet-town-native-scene` branch implements the first playable area: **wake in Red's bedroom, explore Pallet, follow Oak, choose a starter and battle Blue**.
+A native Nintendo 64 RPG project built on pinned [HackerOoT](https://github.com/HackerN64/HackerOoT), with a five-area opening and an existing optional private Stadium model pipeline.
+
+## ROM-driven Red/Blue opening (work in progress)
+
+Branch **`feat/pallet-rom-converter`** extends the existing five-area opening
+with data imported from an **unmodified user-supplied English Pokémon Red or Blue
+ROM**. It does not bundle a GB ROM, text, graphics or proprietary Pokémon data.
+
+```sh
+# Extract Pallet and opening-area content into private, inspectable assets.
+make import-pallet POKEMON_ROM="/absolute/path/Pokemon Red.gb"
+
+# Build a separate native N64 ROM with the existing OoT/Stadium setup.
+make rom-pallet-docker \
+  ROM="/absolute/path/Ocarina of Time US 1.2.z64" \
+  POKEMON_ROM="/absolute/path/Pokemon Red.gb"
+
+# Launch the imported build, not the authored baseline.
+make play-pallet
+```
+
+This creates **`build/poke-n64-pallet.z64`**, leaving the authored
+`build/poke-n64-oot.z64` unchanged. The imported build still starts in Red's
+bedroom, uses the OoT camera, and can use the existing private Stadium assets.
+
+| Aspect | Source in import mode |
+| --- | --- |
+| Pallet Town geometry and static collision | ROM tile/block/collision data; original low-poly 3D art rules |
+| Four interior map grids and collision | ROM map blocks/tilesets; original interior 3D furniture/art remains interpreted |
+| Warps, NPCs, signs, initial visibility | ROM records for all five maps |
+| Opening dialogue | Original text decoded locally from ROM for named house, lab, Oak, starter and rival passages, with pagination |
+| Pokémon base stats, initial moves, move power/type/accuracy/PP | ROM data for the five species and nine moves currently supported by the N64 battle runtime |
+| Story events and battle rules | **Source-informed adapters and simplified N64 battle interpreter**, not the Game Boy executable |
+
+**Not a full Gen 1 translation yet.** The import does not emulate arbitrary
+Game Boy assembly, import all text ASM/effects, implement the full Gen 1 battle
+engine, later learned moves, music, wandering AI or save persistence. Some
+special interactions are intentionally unavailable rather than substituting
+authored story text. Exact event timing and source-backed interior furniture
+remain incomplete.
+
+**Verification:** synthetic ROM tests and native MIPS build checks exercise the
+pipeline. **No actual retail Red/Blue input, linked imported ROM, ParaLLEl
+playthrough or hardware run has been verified in this workspace.** The PR
+remains a draft until these are tested.
+
+See [ROM converter internals](docs/PALLET_ROM_CONVERTER.md) for supported ROM
+hashes, generated files, current coverage, assumptions and live verification.
+
+## Build and play the authored opening
+
+The ordinary opening implements **wake in Red's bedroom, explore Pallet, follow Oak, choose a starter and battle Blue** using the existing authored world and story data.
 
 **Verification status:** portable story/battle tests and real big-endian VR4300/MIPS object compilation pass. The new five-area opening has **not yet been linked and played in an emulator in this development environment**; the source ROM and working ParaLLEl installation are on the development Mac. Earlier outdoor/battle smoke results apply to the earlier build. Hardware performance and this opening's native transitions still require that live check.
-
-## Build and play this opening
 
 From your existing checkout, with the supported Zelda dump already in `roms/`:
 
 ```sh
 git fetch origin
-git switch feat/pallet-town-native-scene
+git switch feat/pallet-rom-converter
 git pull --ff-only
 make rom-oot-play
 ```

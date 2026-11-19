@@ -15,6 +15,8 @@
 #include "sys_math.h"
 #include "z_lib.h"
 #include "view.h"
+#include "poke_pallet_native.h"
+#include "poke_pallet_import.h"
 
 typedef struct {
     PokeGame game;
@@ -33,14 +35,22 @@ static s32 room_for_scene(s32 scene) {
     for (i=0;i<INTRO_ROOM_COUNT;++i) if (sPokeSceneIds[i]==scene) return i;
     return -1;
 }
-s32 PokeOot_IsScene(s32 scene) { return room_for_scene(scene)>=0; }
+/* A supplied Red/Blue ROM replaces Pallet Town's scene geometry and text
+ * data. It must not replace the five-room opening/story with the earlier
+ * isolated outdoor demo. That event runner remains available for tools. */
+s32 PokeOot_ImportedPallet(void) { return 0; }
+s32 PokeOot_IsScene(s32 scene) {
+    return PokeOot_ImportedPallet() ? scene==SCENE_KOKIRI_FOREST : room_for_scene(scene)>=0;
+}
 s32 PokeOot_BattleActive(void) { return sPokeOot.initialized && poke_in_battle(&sPokeOot.game); }
 s32 PokeOot_InputLocked(void) {
+    if (PokeOot_ImportedPallet()) return !sPokeOot.initialized || PokePalletNative_InputLocked();
     return !sPokeOot.initialized || PokeOot_BattleActive() ||
            poke_intro_locked(&sPokeOot.intro) || sPokeOot.wakeFrames;
 }
 s32 PokeOot_ResolveSpawn(s32 sceneId,s32 original) {
     PokeIntro* s=&sPokeOot.intro;
+    if (PokeOot_ImportedPallet()) return original;
     if (sPokeOot.initialized && s->warp_pending &&
         sPokeSceneIds[s->warp_room]==sceneId) return s->warp_spawn;
     return original;
@@ -82,17 +92,10 @@ void PokeOot_PrepareInput(PlayState* play) {
     in->rel.button&=~(BTN_A|BTN_B|BTN_START|BTN_L|BTN_R|BTN_CLEFT|BTN_CRIGHT|BTN_CUP|BTN_CDOWN);
 }
 
-static void field_camera(PlayState* play,Player* player) {
-    Vec3f at,eye;
-    s16 id=sPokeOot.fieldCameraId;
-    if (id==CAM_ID_NONE || PokeOot_BattleActive()) return;
-    at=player->actor.world.pos; at.y=24;
-    /* Fixed north orientation with a close, cutaway interior follow view. */
-    at.x=clamp(at.x,-180,180); at.z=clamp(at.z,-240,240);
-    eye.x=at.x; eye.y=at.y+550; eye.z=at.z+430;
-    Play_SetCameraAtEye(play,id,&at,&eye);
-    Play_SetCameraFov(play,id,48);
-}
+/* Keep OoT's main chase camera active in every Pokemon room.
+ * The previous custom subcamera forced eye.y=player.y+550, creating
+ * the top-down viewpoint the game is not intended to use. A battle
+ * temporarily switches to its own subcamera, then restores CAM_ID_MAIN. */
 static void silent_navi(Actor* actor,PlayState* play) {
     (void)actor; (void)play;
 }
@@ -113,6 +116,17 @@ void PokeOot_OnSceneEnter(PlayState* play) {
     s32 room=room_for_scene(play->sceneId);
     if (room<0) return;
     suppress_navi(play);
+    if (PokeOot_ImportedPallet()) {
+        if (play->sceneId!=SCENE_KOKIRI_FOREST) return;
+        if (!sPokeOot.initialized) {
+            poke_init(&sPokeOot.game,(u32)osGetTime()^0x504F4B45U);
+            sPokeOot.initialized=1;
+        }
+        sPokeOot.havePrevious=0; sPokeOot.gait=0;
+        sPokeOot.battleCameraId=CAM_ID_NONE; sPokeOot.fieldCameraId=CAM_ID_NONE;
+        PokePalletNative_OnSceneEnter(play);
+        return;
+    }
     if (!sPokeOot.initialized) {
         poke_init(&sPokeOot.game,(u32)osGetTime()^0x504F4B45U);
         poke_intro_init(&sPokeOot.intro);
@@ -121,15 +135,7 @@ void PokeOot_OnSceneEnter(PlayState* play) {
     poke_intro_enter(&sPokeOot.intro,(u8)room);
     sPokeOot.havePrevious=0; sPokeOot.gait=0;
     sPokeOot.battleCameraId=CAM_ID_NONE; sPokeOot.fieldCameraId=CAM_ID_NONE;
-    if (room!=INTRO_PALLET) {
-        s16 id=Play_CreateSubCamera(play);
-        sPokeOot.fieldCameraId=id;
-        if (id!=CAM_ID_NONE) {
-            Play_ChangeCameraStatus(play,CAM_ID_MAIN,CAM_STAT_WAIT);
-            Play_ChangeCameraStatus(play,id,CAM_STAT_ACTIVE);
-            if (GET_PLAYER(play)) field_camera(play,GET_PLAYER(play));
-        }
-    }
+    /* All five rooms now use OoT's normal main chase camera. */
 }
 static u16 battle_input(const Input* in) {
     u16 keys=0;
@@ -224,6 +230,26 @@ void PokeOot_Update(PlayState* play) {
     u8 before;
     u16 pressed=0;
     if (!sPokeOot.initialized || !p || !PokeOot_IsScene(play->sceneId)) return;
+    if (PokeOot_ImportedPallet()) {
+        ++sPokeOot.frame;
+        if (play->transitionTrigger!=TRANS_TRIGGER_OFF || play->transitionMode!=TRANS_MODE_OFF) return;
+        PokePalletNative_Update(play);
+        /* Red uses the same original walking mesh in both modes. Imported
+         * actor placement/story remains independent of the authored opening. */
+        sPokeOot.gait=0;
+        if (sPokeOot.havePrevious) {
+            dx=p->actor.world.pos.x-sPokeOot.previous.x;
+            dz=p->actor.world.pos.z-sPokeOot.previous.z;
+            travelled=sqrtf(dx*dx+dz*dz);
+            if (travelled<40) {
+                sPokeOot.phase+=travelled*.14f;
+                if (sPokeOot.phase>6.2831853f) sPokeOot.phase-=6.2831853f;
+                sPokeOot.gait=clamp(travelled/3.0f,0,1);
+            }
+        }
+        sPokeOot.previous=p->actor.world.pos; sPokeOot.havePrevious=1;
+        return;
+    }
     ++sPokeOot.frame;
     if (sPokeOot.attackFrames) --sPokeOot.attackFrames;
     if (sPokeOot.wakeFrames) --sPokeOot.wakeFrames;
@@ -279,8 +305,17 @@ void PokeOot_Update(PlayState* play) {
         } else sPokeOot.gait=0;
     }
     sPokeOot.previous=p->actor.world.pos; sPokeOot.havePrevious=1;
-    field_camera(play,p);
     request_warp(play);
+}
+
+/* Prefer original dialogue extracted locally from the user-supplied
+ * Game Boy ROM for outdoor signs, residents and Oak's grass warning.
+ * The portable story remains responsible for Oak's escort and transitions.
+ * Only a 2x36-character view is exposed to the native GfxPrint UI. */
+/* All imported dialogue, including pages, is rendered by the shared ROM
+ * story adapter. The authored prototype remains the opt-out build. */
+static const char* intro_line(const PokeIntro* intro, const PokeGame* game, unsigned line) {
+    return poke_intro_line(intro, game, line);
 }
 
 static void human(PlayState* play,s32 kind,f32 x,f32 y,f32 z,s16 yaw,f32 gait) {
@@ -294,6 +329,19 @@ static void human(PlayState* play,s32 kind,f32 x,f32 y,f32 z,s16 yaw,f32 gait) {
 }
 static void npc(PlayState* play,s32 kind,s32 x,s32 z,s16 yaw) {
     human(play,kind,cell_x(sPokeOot.intro.room,(f32)x),0,cell_z(sPokeOot.intro.room,(f32)z),yaw,0);
+}
+static void npc_slot(PlayState* play,s32 kind,s32 room,u8 id,s32 x,s32 z,s16 yaw) {
+    unsigned i;
+    if (gPokeOpeningTextEnabled) {
+        for (i=0;i<gPokeIntroObjectCount;++i) {
+            const PokeIntroObject* obj=&gPokeIntroObjects[i];
+            if (obj->room==room && obj->id==id) {
+                npc(play,kind,obj->x,obj->z,yaw);
+                return;
+            }
+        }
+    }
+    npc(play,kind,x,z,yaw);
 }
 static void ball(PlayState* play,s32 x) {
     GraphicsContext* gfx=play->state.gfxCtx;
@@ -327,19 +375,19 @@ static void draw_world_people(PlayState* play,Player* p) {
         PokeModels_DrawHuman(play->state.gfxCtx,MODEL_RED,0,0);
         Matrix_Pop();
     } else human(play,MODEL_RED,p->actor.world.pos.x,p->actor.world.pos.y,p->actor.world.pos.z,p->actor.shape.rot.y,sPokeOot.gait);
-    if (s->room==INTRO_HOME) npc(play,MODEL_MOM,5,4,(s16)0xC000);
-    else if (s->room==INTRO_BLUE_HOUSE) npc(play,MODEL_DAISY,2,3,0x4000);
+    if (s->room==INTRO_HOME) npc_slot(play,MODEL_MOM,INTRO_HOME,1,5,4,(s16)0xC000);
+    else if (s->room==INTRO_BLUE_HOUSE) npc_slot(play,MODEL_DAISY,INTRO_BLUE_HOUSE,1,2,3,0x4000);
     else if (s->room==INTRO_PALLET) {
-        npc(play,MODEL_GIRL,3,8,0); npc(play,MODEL_FISHER,11,14,0);
+        npc_slot(play,MODEL_GIRL,INTRO_PALLET,2,3,8,0); npc_slot(play,MODEL_FISHER,INTRO_PALLET,3,11,14,0);
         if (s->stage==INTRO_OAK_WARNING) {
             human(play,MODEL_OAK,p->actor.world.pos.x,0,p->actor.world.pos.z+80,(s16)0x8000,0);
         } else if (s->stage==INTRO_ESCORT)
             human(play,MODEL_OAK,sPokeOot.oakPosition.x,0,sPokeOot.oakPosition.z,p->actor.shape.rot.y,1);
     } else if (s->room==INTRO_LAB) {
         s32 i; static const u8 choices[]={POKE_CHARMANDER,POKE_SQUIRTLE,POKE_BULBASAUR};
-        if (s->stage>=INTRO_LAB_WELCOME) npc(play,MODEL_OAK,5,2,0);
-        if (s->stage<INTRO_COMPLETE) npc(play,MODEL_BLUE,4,3,0);
-        npc(play,MODEL_GIRL,1,9,0); npc(play,MODEL_SCIENTIST,2,10,0); npc(play,MODEL_SCIENTIST,8,10,0);
+        if (s->stage>=INTRO_LAB_WELCOME) npc_slot(play,MODEL_OAK,INTRO_LAB,5,5,2,0);
+        if (s->stage<INTRO_COMPLETE) npc_slot(play,MODEL_BLUE,INTRO_LAB,1,4,3,0);
+        npc_slot(play,MODEL_GIRL,INTRO_LAB,9,1,9,0); npc_slot(play,MODEL_SCIENTIST,INTRO_LAB,10,2,10,0); npc_slot(play,MODEL_SCIENTIST,INTRO_LAB,11,8,10,0);
         for (i=0;i<3;++i) if (choices[i]!=s->starter && choices[i]!=s->rival) ball(play,6+i);
     }
 }
@@ -414,6 +462,14 @@ void PokeOot_Draw(PlayState* play) {
     Player* p=GET_PLAYER(play); s32 battling=PokeOot_BattleActive(),i; unsigned choices;
     if (!sPokeOot.initialized || !p || !PokeOot_IsScene(play->sceneId)) return;
     View_Apply(&play->view,VIEW_ALL);
+    if (PokeOot_ImportedPallet()) {
+        /* Link limbs are suppressed by the shared Red hook, so draw the
+         * replacement player even though the authored intro is not running. */
+        human(play,MODEL_RED,p->actor.world.pos.x,p->actor.world.pos.y,
+              p->actor.world.pos.z,p->actor.shape.rot.y,sPokeOot.gait);
+        PokePalletNative_Draw(play);
+        return;
+    }
     if (battling) draw_battle(play); else draw_world_people(play,p);
     /* Play_Draw queued the native transition overlay before this hook. Keep
      * ordinary UI beneath its fade by omitting it until the room is ready. */
@@ -442,7 +498,7 @@ void PokeOot_Draw(PlayState* play) {
         if (s->talk) {
             GfxPrint_SetPosPx(&printer,16,185);GfxPrint_Printf(&printer,"%.35s",poke_intro_speaker(s,g));
             GfxPrint_SetColor(&printer,244,239,219,255);
-            for(i=0;i<2;++i) { GfxPrint_SetPosPx(&printer,16,201+i*12);GfxPrint_Printf(&printer,"%.36s",poke_intro_line(s,g,(unsigned)i)); }
+            for(i=0;i<2;++i) { GfxPrint_SetPosPx(&printer,16,201+i*12);GfxPrint_Printf(&printer,"%.36s",intro_line(s,g,(unsigned)i)); }
         } else {
             GfxPrint_SetPosPx(&printer,16,218);GfxPrint_SetColor(&printer,244,239,219,255);
             GfxPrint_Printf(&printer,"%.36s",poke_intro_objective(s));
