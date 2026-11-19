@@ -6,6 +6,35 @@ A native Nintendo 64 RPG prototype built on [HackerOoT](https://github.com/Hacke
 
 The 3D models are original, simple block models. Stadium/Snap models and animations have **not** been imported. This is an early playable rules prototype with native integration, not the full Kanto remake.
 
+## Animated Stadium Bulbasaur: experimental OoT battle
+
+A **private Stadium model and animation pipeline** is available on the
+`feat/stadium-animated-bulbasaur` integration branch. It builds on the real
+OoT `PlayState` total conversion and keeps the original standalone game on
+`main` untouched.
+
+After exporting Bulbasaur from your compatible Stadium ROM:
+
+```sh
+python3 tools/stadium_export.py --pack assets/private/stadium/001/source.dsm --species 1 --animated
+make stadium-n64
+make rom-oot-docker
+```
+
+Open `build/poke-n64-oot.z64` using ParaLLEl N64 with a working F3DEX3
+configuration. The build uses the privately generated animation frames when
+available, otherwise it safely links a no-op asset stub.
+
+In Kokiri Forest, **L+C-left** selects Bulbasaur. Use **L+R+A** for an attack
+preview and **L+R+B** to start a test encounter against a level-4 Rattata.
+The native sub-camera frames the encounter while the existing Pokémon core
+handles Fight/Bag/Party/Run, HP, PP and turns. Rattata and the test landscape
+remain placeholders. No Pokémon assets are committed.
+
+See [animated Stadium export and N64 battle test](docs/STADIUM_EXPORT.md).
+These changes have MIPS object-compilation and synthetic-asset tests; actual
+rendering and battle transitions still require testing against your local ROM.
+
 ## What is implemented
 
 | System | In this slice |
