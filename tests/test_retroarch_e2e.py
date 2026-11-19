@@ -140,6 +140,7 @@ class NetworkTests(unittest.TestCase):
             self.assertIn('network_cmd_port = "58001"', config)
             self.assertIn('network_remote_base_port = "58002"', config)
             self.assertIn('network_remote_enable_user_p1 = "true"', config)
+            self.assertIn('pause_nonactive = "false"', config)
             self.assertIn('screenshot_directory = "', config)
             self.assertIn('savestate_auto_load = "false"', config)
             self.assertIn('savefile_directory = "', config)
