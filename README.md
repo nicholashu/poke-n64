@@ -136,23 +136,25 @@ The helper validates the base image, checks the host toolchain, installs the pro
 
 ### Native boot comparison (black-screen diagnostics)
 
-If the game ROM remains black even before the expected blue diagnostic frame, compare the patched engine with a control ROM. Both builds use your own OoT US NTSC 1.2 image and the same HackerOoT revision.
+The earlier *control* image still linked our modifications. It was not a clean baseline. The current `rom-control-docker` target creates a **new, unmodified HackerOoT checkout** in `build/docker-engine-arm64-stock` (or `-amd64-stock`), with all upstream sources, linker, ROM header and Zelda startup transition intact.
 
 ```sh
 make rom-control-docker
 make rom-docker
 ```
 
-Load the resulting images in **ares**, with the 4 MB Expansion Pak selected (8 MB total N64 RAM):
+Load both images in **ares**, with the 4 MB Expansion Pak selected (8 MB total N64 RAM):
 
 | ROM | Expected result | Meaning |
 | --- | --- | --- |
-| `build/poke-n64-control.z64` | Original Zelda logo / title sequence | Engine, compiled patch and original state transitions reached gameplay |
-| `build/poke-n64.z64` | Solid blue screen before pressing A | Custom Pokémon state reaches framebuffer setup |
+| `build/poke-n64-control.z64` | Original Zelda logo/title sequence | The untouched HackerOoT build works with this base ROM and emulator |
+| `build/poke-n64.z64` | Solid blue screen before pressing A | Our custom Pokémon game state reaches framebuffer setup |
 
-The control ROM retains the original title transition but **still links our Pokémon code**, making it more informative than simply loading an unmodified Zelda cartridge. It uses cartridge game ID `PC` and a separate filename; don't reuse game saves between the two builds.
+The pristine control ROM retains Zelda's game ID and save format; use a separate emulator save slot from Pokémon. This control image is **not equivalent to the previous control image**, despite sharing the same output filename.
 
-If **both** are black, collect the final ROM header and emulator/debugger output to investigate build packaging or boot. If **only Pokémon** is black, concentrate on the custom state registration/initialization. A successful build or a MIPS object compile does not establish an emulator boot. Neither ROM has been tested against the user's local assets from this environment.
+Before BPS packaging, `tools/inspect_rom.py` independently verifies the generated N64 header, IPL3 variant and boot CRC using the engine's `ipl3checksum` dependency. It prints title, game ID, entrypoint and computed CRCs or stops on a mismatch. A correct checksum is necessary but does not establish that the ROM will boot.
+
+If **both** images are black, collect the brief on-screen fault text and the build's `ROM verified` output. If **only Pokémon** is black, investigate its custom boot path. Use a macOS screen recording or phone slow-motion video to capture text that flashes only for a frame. These checks cannot diagnose the exact fault without a capture or a runtime trace.
 
 ### Boot-screen diagnostic
 
