@@ -324,7 +324,7 @@ def _collision_data(geom: Geometry):
     return vertices, polys
 
 
-def scene_source(geom: Geometry, *, bounds=None, spawn=None) -> str:
+def scene_source(geom: Geometry, *, bounds=None, spawn=None, spawn_list=None) -> str:
     """Emit a scene with explicit bounds/spawn for generated maps as well.
 
     Defaults preserve every opening room and its entrance list. ROM importers
@@ -333,7 +333,13 @@ def scene_source(geom: Geometry, *, bounds=None, spawn=None) -> str:
     vertices, polys = _collision_data(geom)
     room_name=getattr(geom,"room_name","PalletTown")
     x1,z1,x2,z2=bounds if bounds is not None else geom.bounds
-    if spawn is None:
+    if spawn_list is not None:
+        if spawn is not None:
+            raise ValueError("Use either one preview spawn or the full opening spawn list")
+        spawns=list(spawn_list)
+        if not 1<=len(spawns)<=8 or any(len(entry)!=4 for entry in spawns):
+            raise ValueError("Native scene requires 1..8 (x,y,z,yaw) spawn entries")
+    elif spawn is None:
         spawns=[(*point(room_name,x,z),yaw) for x,z,yaw in ROOMS[room_name]["spawns"]]
         spawns=[(x,0,z,yaw) for x,z,yaw in spawns]
     else:
