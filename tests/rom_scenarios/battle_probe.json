@@ -1,0 +1,124 @@
+{
+  "name": "Battle probe: select Bulbasaur, face wild Rattata, use Tackle",
+  "description": "Exploratory native battle route using independent C-button controls in ParaLLEl Launcher Edition. Verifies battle UI transitions and a turn-animation change without claiming HP delta until OCR can read the counters.",
+  "steps": [
+    {
+      "action": "wait",
+      "seconds": 9
+    },
+    {
+      "action": "assert_status"
+    },
+    {
+      "action": "screenshot",
+      "name": "field_before"
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "field_before"
+    },
+    {
+      "action": "key_chord",
+      "keycodes": [
+        14,
+        123
+      ],
+      "seconds": 0.45
+    },
+    {
+      "action": "wait",
+      "seconds": 0.5
+    },
+    {
+      "action": "screenshot",
+      "name": "starter_selected"
+    },
+    {
+      "action": "assert_visible",
+      "image": "starter_selected",
+      "min_color_spread": 35
+    },
+    {
+      "action": "key_chord",
+      "keycodes": [
+        14,
+        15,
+        56
+      ],
+      "seconds": 0.45
+    },
+    {
+      "action": "wait",
+      "seconds": 1.5
+    },
+    {
+      "action": "screenshot",
+      "name": "battle_menu"
+    },
+    {
+      "action": "assert_visible",
+      "image": "battle_menu",
+      "min_color_spread": 35
+    },
+    {
+      "action": "assert_changed",
+      "before": "starter_selected",
+      "after": "battle_menu",
+      "min_difference": 6
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "battle_menu"
+    },
+    {
+      "action": "key_hold",
+      "keycode": 49,
+      "seconds": 0.28
+    },
+    {
+      "action": "wait",
+      "seconds": 0.55
+    },
+    {
+      "action": "screenshot",
+      "name": "move_menu"
+    },
+    {
+      "action": "assert_changed",
+      "before": "battle_menu",
+      "after": "move_menu",
+      "min_difference": 0.8
+    },
+    {
+      "action": "key_hold",
+      "keycode": 49,
+      "seconds": 0.28
+    },
+    {
+      "action": "wait",
+      "seconds": 1.7
+    },
+    {
+      "action": "screenshot",
+      "name": "after_attack"
+    },
+    {
+      "action": "assert_visible",
+      "image": "after_attack",
+      "min_color_spread": 35
+    },
+    {
+      "action": "assert_changed",
+      "before": "move_menu",
+      "after": "after_attack",
+      "min_difference": 1
+    },
+    {
+      "action": "assert_no_fault",
+      "image": "after_attack"
+    },
+    {
+      "action": "assert_status"
+    }
+  ]
+}
