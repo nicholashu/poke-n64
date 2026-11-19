@@ -6,6 +6,22 @@ A native Nintendo 64 RPG prototype built on [HackerOoT](https://github.com/Hacke
 
 The 3D models are original, simple block models. Stadium/Snap models and animations have **not** been imported. This is an early playable rules prototype with native integration, not the full Kanto remake.
 
+## Extract Pokémon Stadium models (experimental)
+
+A local-only Stadium asset exporter is available on the feat/stadium-model-export branch.
+It produces a textured Blender-readable **GLB** for a chosen species, plus animation
+metadata in JSON. It does **not** yet build animated OoT actors.
+
+    make stadium-inspect                 # Validate your Stadium ROM revision
+    make stadium-export                  # Bulbasaur (#001)
+    make stadium-export STADIUM_SPECIES=19 # Rattata (#019)
+
+The source ROM and derived assets remain private and Git-ignored at
+assets/private/stadium/. The extractor is currently documented for Stadium US
+1.0; your USA Rev 2 cartridge dump is **experimental and must be validated**.
+See [Stadium export instructions](docs/STADIUM_EXPORT.md) for the asset pipeline
+and Blender/Fast64 workflow.
+
 ## What is implemented
 
 | System | In this slice |
