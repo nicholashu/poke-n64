@@ -117,7 +117,9 @@ def install(engine: Path, boot_mode: str = "poke", *,
         outputs[path] = replace_once(text, anchor, replacement, path).encode()
 
     if boot_mode == "oot":
-        entrance = "ENTR_KOKIRI_FOREST_0" if imported is not None else "ENTR_KNOW_IT_ALL_BROS_HOUSE_0"
+        # Even with a user-supplied Red/Blue map, boot in Red's bedroom.
+        # The imported exterior is one room of the complete opening.
+        entrance = "ENTR_KNOW_IT_ALL_BROS_HOUSE_0"
         # Total conversion uses the REAL Zelda PlayState and camera, not
         # our custom standalone GameState. Kokiri Forest is temporary.
         patch("src/code/title_setup.c", '#include "save.h"',
