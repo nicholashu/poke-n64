@@ -89,6 +89,39 @@ make play ARGS="--seed 1 --save adventure.sav --no-clear"
 
 ## Build the native N64 target
 
+## Faster ROM builds
+
+From the `feat/incremental-rom-build` branch, **the first build extracts the
+full OoT asset baseline**, but subsequent builds reuse it. The wrapper stamps
+successful extraction in the isolated HackerOoT checkout, keeps timestamps
+unchanged for identical Pokémon overlay sources, and skips recompression if
+the compiled ROM hasn't changed.
+
+```sh
+# First run includes upstream setup and extraction.
+make rom-oot-docker
+
+# Subsequent runs retain the same engine and extracted assets.
+make rom-oot-docker
+
+# If the original asset extraction needs a forced refresh:
+python3 tools/docker_rom.py --oot-conversion --refresh-setup
+```
+
+No `make clean` or `distclean` is run by the wrapper. Build output remains
+in `build/docker-engine-arm64-oot/` or `build/docker-engine-amd64-oot/`
+depending on your Docker engine. Updating Bulbasaur's generated C usually
+requires compiling that modified object and relinking/compressing the ROM,
+**not rerunning Zelda's asset extraction**.
+
+The current total-conversion ROM still includes many original OoT scenes,
+actors and assets, because upstream scene/object tables and the ROM segment
+specification reference them. **They are not necessarily recompiled each
+build**, and safely removing them is a later *slim ROM* project requiring
+scene-table, entrance, object and DMA reference migration.
+
+See [incremental build and ROM slimming design](docs/BUILD_PERFORMANCE.md).
+
 ### Input and hardware target
 
 - **Engine:** HackerOoT commit `5fac42fa11278810ce9ca5b85d5d40b4136b5f57`, recorded in `native/upstream.json`.
