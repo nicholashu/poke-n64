@@ -151,6 +151,9 @@ def network_overlay(save: Path, state: Path, shots: Path,
         "network_remote_base_port": str(pad_port),
         "screenshot_directory": str(shots),
         "screenshot_raw": "true",
+        # Terminal-driven automation must keep the emulation clock running
+        # even when another macOS app owns keyboard focus.
+        "pause_nonactive": "false",
     }
     return play_oot.session_overlay(save, state) + "".join(
         f"{key} = {play_oot.quote_config(value)}\n" for key, value in values.items()
@@ -292,12 +295,22 @@ class Runner:
         self.process = subprocess.Popen(argv, stdout=self.log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + 35
         response = None
+        unpause_attempted = False
+        paused_checks = 0
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 raise RuntimeError(f"RetroArch exited during startup ({self.process.returncode}); inspect process.log")
             response = self.remote.command("GET_STATUS", reply=True)
             if response and response.startswith("GET_STATUS PLAYING"):
                 break
+            if response and response.startswith("GET_STATUS PAUSED"):
+                paused_checks += 1
+                if paused_checks >= 3 and not unpause_attempted:
+                    # Some installations launch in the paused state even with
+                    # pause_nonactive=false. Resume only after status proves
+                    # it is actually paused, never blindly toggle on startup.
+                    self.remote.command("PAUSE_TOGGLE")
+                    unpause_attempted = True
             time.sleep(0.30)
         else:
             raise RuntimeError(f"RetroArch never reported PLAYING on isolated port {command_port}; last response: {response!r}")
