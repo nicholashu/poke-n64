@@ -125,6 +125,23 @@ refuses to launch a second instance until it is closed.
 **This applies to `make play-oot` / `make rom-oot-play`**, not arbitrary
 launches made manually through the RetroArch GUI.
 
+## Script the real N64 emulator
+
+Once the ROM is built, use the native automated test harness to drive the
+**actual** ParaLLEl N64 core through RetroArch's local UDP controller port,
+capture real screenshots and assert Link moved without a fault screen.
+
+```sh
+make test-rom         # automated Pallet Town boot + walking smoke test
+make rom-oot-e2e      # rebuild ROM, then run smoke test
+```
+
+Each test uses fresh private SRAM/savestate directories, unique UDP ports and
+a dedicated tracked emulator process. Results, logs and screenshots stay in
+`build/emulator-tests/`. Unit tests don't require any ROM. See
+[real-ROM test automation](docs/ROM_AUTOMATION.md) to write new JSON scenarios
+for camera movement, battle inputs and collision checks.
+
 ## Build the native N64 target
 
 ### Native Pallet Town scene (experimental)
