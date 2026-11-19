@@ -12,7 +12,7 @@ The runtime is not a PC port, and the host harness is not the ROM.
 
 ## Native implementation
 
-On power-up, `Poke_Init` enters a simple **blue framebuffer-clear probe** before the world renderer runs. Matrix, camera, letterbox and game-state initialization are also deferred until after the first A press, making the blue frame a smaller, better-isolated startup test. Press A to load SRAM and enter the game, or Z+A to enter without the SRAM read. This isolates early engine boot, persistence and scene drawing in that order. A black screen before the blue probe is not evidence of an unsupported Expansion Pak. The probe deliberately uses no imported assets, HUD font or geometry, so it can still appear when those systems fail.
+On power-up, `Poke_Init` initializes letterbox state, which the engine's framebuffer setup requires, then enters a simple **blue framebuffer-clear probe** before the world renderer runs. Matrix, camera and game-state initialization are deferred until after the first A press. Press A to load SRAM and enter the game, or Z+A to enter without the SRAM read. This isolates early engine boot, persistence and scene drawing in that order. A black screen before the blue probe is not evidence of an unsupported Expansion Pak. The probe deliberately uses no imported assets, HUD font or geometry, so it can still appear when those systems fail.
 
 
 - A perspective tracking camera renders a small Pallet/Route 1 layout.
@@ -149,9 +149,12 @@ the ROM, and writes a BPS patch. This step needs the original OoT US NTSC 1.2 RO
 and upstream build dependencies. It is intentionally not faked in CI.
 
 The native sources and boot hooks have passed actual MIPS object compilation.
-**A complete ROM has not yet been linked or tested in an emulator or on hardware
-for this project.** The Docker check adds a reproducible toolchain check; it does
-not establish those later results.
+A complete ROM was linked locally and its blue boot screen verified in ParaLLEl
+N64 through RetroArch on 19 November 2026. The earlier startup TLB load fault at
+`Letterbox_GetSize` came from delaying letterbox initialization until after A;
+framebuffer setup already needs that state on the first frame. Native gameplay,
+cartridge saving and real hardware remain unverified. The Docker object check
+alone does not establish ROM linking or emulator results.
 
 The runtime uses F3DEX3. Test with an LLE-capable emulator such as ares or ParaLLEl
 and 8 MiB RAM, then on original N64 hardware. Building a `.z64`, emulator booting,

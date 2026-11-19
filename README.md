@@ -2,7 +2,7 @@
 
 A native Nintendo 64 RPG prototype built on [HackerOoT](https://github.com/HackerN64/HackerOoT). The first slice is a small original Pallet / Route 1 test area: choose a starter, explore, battle wild Pokémon, catch them, heal and save.
 
-**Current status:** the gameplay loop is implemented and tested on the host. The native renderer, controller adapter, SRAM journal and engine boot hooks compile into big-endian VR4300/MIPS objects against the pinned engine. **A complete ROM has not been linked or played in an emulator or on hardware yet.** That step needs a user-supplied Ocarina of Time US NTSC 1.2 ROM.
+**Current status:** the gameplay loop is implemented and tested on the host. The native renderer, controller adapter, SRAM journal and engine boot hooks compile into big-endian VR4300/MIPS objects against the pinned engine. A complete ROM has been linked locally using a user-supplied Ocarina of Time US NTSC 1.2 ROM, and the blue boot screen was verified in ParaLLEl N64 through RetroArch on 19 November 2026. **Native gameplay, cartridge saving and real hardware remain unverified.**
 
 The 3D models are original, simple block models. Stadium/Snap models and animations have **not** been imported. This is an early playable rules prototype with native integration, not the full Kanto remake.
 
