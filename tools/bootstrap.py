@@ -116,7 +116,7 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               "    PokeOot_OnSceneEnter(this);\n}")
         patch("src/code/z_play.c",
               "        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);",
-              "        Play_Update(this);\n"
+              "        if (!PokeOot_BattleActive()) Play_Update(this);\n"
               "        PokeOot_Update(this);\n"
               "    }\n\n    PLAY_LOG(4583);")
         patch("src/code/z_play.c",
