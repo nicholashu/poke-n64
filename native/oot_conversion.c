@@ -117,7 +117,7 @@ void PokeOot_Draw(PlayState* play) {
     GfxPrint_SetColor(&printer, 244, 239, 219, 255);
     GfxPrint_SetPosPx(&printer, 16, 22);
     if (!(sPokeOot.game.flags & FLAG_STARTER)) {
-        GfxPrint_Printf(&printer, "L+C-LEFT BULB  L+C-UP CHAR  L+C-RIGHT SQUIRT");
+        GfxPrint_Printf(&printer, "L+C< BULB  L+C^ CHAR  L+C> SQUIRT");
     } else {
         const PokeMon* starter = &sPokeOot.game.party[0];
         GfxPrint_Printf(&printer, "%s L%u  PARTY %u/6  STEPS %u",
