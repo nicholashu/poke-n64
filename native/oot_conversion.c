@@ -226,9 +226,11 @@ static void PokeOot_DrawStadiumModel(PlayState* play) {
  */
 static void PokeOot_DrawWildProxy(PlayState* play) {
     GraphicsContext* gfx = play->state.gfxCtx;
-    Vtx* vertices = GRAPH_ALLOC(gfx, sizeof(Vtx) * 8);
+    Vtx* vertices;
     s32 i;
-    if (vertices == NULL || !PokeOot_BattleActive()) return;
+    if (!PokeOot_BattleActive()) return;
+    vertices = GRAPH_ALLOC(gfx, sizeof(Vtx) * 8);
+    if (vertices == NULL) return;
     for (i = 0; i < 8; i++) {
         s32 top = (i & 2) != 0;
         vertices[i].v.ob[0] = (i & 1) ? 27 : -27;
