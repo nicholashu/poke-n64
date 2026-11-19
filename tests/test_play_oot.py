@@ -22,7 +22,8 @@ class CleanLaunchTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        base = Path(self.tmp.name)
+        # macOS /var is a symlink to /private/var; match launcher Path.resolve().
+        base = Path(self.tmp.name).resolve()
         self.app = base / "My RetroArch Launcher.app"
         executable = self.app / "Contents/MacOS/RetroArch"
         executable.parent.mkdir(parents=True)
@@ -101,7 +102,7 @@ class CleanLaunchTests(unittest.TestCase):
         self.assertEqual(invoked, [])
         self.assertIn("--no-patch", out)
         self.assertIn("--appendconfig=", out)
-        self.assertIn("fresh session directory", out)
+        self.assertIn("unique session directory", out)
         self.assertFalse(self.sessions.exists())
         self.assertEqual(self.legacy_srm.read_bytes(), b"KEEP ME")
 
