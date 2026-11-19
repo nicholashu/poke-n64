@@ -101,6 +101,18 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("self->cameraYaw = 0.0f;", runtime)
         self.assertIn("self->cameraReady = 0;", runtime)
         self.assertIn("self->wasInBattle = 0;", runtime)
+        # The movement heading must remain stable while the camera rotates.
+        self.assertIn("self->movementBasisYaw = self->cameraYaw;", runtime)
+        self.assertIn("Math_CosF(self->movementBasisYaw)", runtime)
+        self.assertIn("Math_SinF(self->movementBasisYaw)", runtime)
+        self.assertIn("self->movementActive = 0;", runtime)
+        # Camera eye and target now share one smoothed pivot and the wall
+        # check accounts for roofs, rather than treating all tiles as infinite.
+        self.assertIn("self->cameraFocusX = CameraApproach(", runtime)
+        self.assertIn("self->cameraFocusZ = CameraApproach(", runtime)
+        self.assertIn("rayHeight < 126.0f", runtime)
+        self.assertIn("rayHeight < 113.0f", runtime)
+        self.assertIn("freeDistance < self->cameraDistance", runtime)
         self.assertIn("static void PrintShort(", runtime)
 
     def test_control_boot_is_pristine_upstream_with_no_pokemon_overlay(self) -> None:
