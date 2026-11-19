@@ -69,13 +69,14 @@ def docker_environment() -> tuple[str, str]:
     return executable, "linux/" + architecture
 
 
-def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False) -> None:
+def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False,
+                  control_boot: bool = False) -> None:
     if base is None and not check_tools:
         raise RuntimeError("A validated base ROM is required.")
     executable, platform = docker_environment()
     architecture = platform.split("/")[1]
     image = f"{IMAGE}-{architecture}"
-    engine = f"/project/build/docker-engine-{architecture}"
+    engine = f"/project/build/docker-engine-{architecture}" + ("-control" if control_boot else "")
     jobs = max(1, jobs)
     print(f"Using native Docker platform: {platform}", flush=True)
     # Only the build recipe is sent to the Docker image builder. Source code,
@@ -116,8 +117,11 @@ def run_in_docker(base: Path | None, jobs: int, check_tools: bool = False) -> No
     command += ["--mount", bind_mount(base.resolve(), "/inputs/base.z64", readonly=True),
                 image, "python3", "tools/build_rom.py", "--rom", "/inputs/base.z64",
                 "--engine", engine, "--jobs", str(jobs)]
+    if control_boot:
+        command.append("--control-boot")
     subprocess.run(command, cwd=ROOT, check=True)
-    print(f"Outputs: {ROOT / 'build/poke-n64.z64'} and {ROOT / 'build/poke-n64.bps'}")
+    label = "poke-n64-control" if control_boot else "poke-n64"
+    print(f"Outputs: {ROOT / 'build' / (label + '.z64')} and {ROOT / 'build' / (label + '.bps')}")
 
 
 def main() -> None:
@@ -127,6 +131,8 @@ def main() -> None:
                         default=Path(environment_rom) if environment_rom else None)
     parser.add_argument("--roms-dir", type=Path, default=ROOT / "roms")
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
+    parser.add_argument("--control-boot", action="store_true",
+                        help="build a stock-boot control ROM alongside the custom game")
     parser.add_argument("--check-tools", action="store_true",
                         help="build the image and compile native objects without a ROM")
     args = parser.parse_args()
@@ -136,7 +142,7 @@ def main() -> None:
         # Fail on missing or mismatched input before any Docker downloads/writes.
         path, _ = select_rom(args.rom, args.roms_dir)
         print(f"Validated base ROM: {path}", flush=True)
-        run_in_docker(path, args.jobs)
+        run_in_docker(path, args.jobs, control_boot=args.control_boot)
 
 
 if __name__ == "__main__":
