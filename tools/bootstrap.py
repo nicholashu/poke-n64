@@ -10,7 +10,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from pallet_town import build as build_pallet_scene, unused_room_source
+from pallet_town import build_segments as build_pallet_segments, unused_room_source
 import subprocess
 import sys
 
@@ -149,12 +149,19 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         # integration, but load an entirely original Pallet Town scene/room
         # payload in place of Kokiri's ROM segments. Native OoT player,
         # collision, camera and room systems stay intact.
+        # OoT loads scene/room commands from offset zero within each
+        # segmented ROM payload. GCC reorders module-level data declarations,
+        # so a single C object placed gPalletSceneHeader at offset 0x1004,
+        # with collision bytes at offset 0x0, causing a black screen.
+        # Link separate command-header objects FIRST in each ROM segment.
         patch("spec/scenes_n64.inc",
               'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_scene.o"',
-              'include "$(BUILD_DIR)/src/code/poke_pallet_scene.o"')
+              'include "$(BUILD_DIR)/src/code/poke_pallet_scene_header.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_scene.o"')
         patch("spec/scenes_n64.inc",
               'include "$(BUILD_DIR)/assets/scenes/overworld/spot04/spot04_room_0.o"',
-              'include "$(BUILD_DIR)/src/code/poke_pallet_room.o"')
+              'include "$(BUILD_DIR)/src/code/poke_pallet_room_header.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_pallet_room.o"')
         # Keep the existing ROM DMA slots (and ID ordering) for Kokiri's
         # unused rooms 1 and 2. Their old meshes reference shared Kokiri
         # textures, which are intentionally no longer in the Pallet scene.
@@ -167,8 +174,12 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
             outputs["src/code/poke_pallet_unused_room_" + str(room_index) + ".c"] = (
                 unused_room_source(room_index).encode()
             )
-        pallet_scene, pallet_room, _ = build_pallet_scene()
+        pallet_scene_head, pallet_scene, pallet_room_head, pallet_room, _ = (
+            build_pallet_segments()
+        )
+        outputs["src/code/poke_pallet_scene_header.c"] = pallet_scene_head.encode()
         outputs["src/code/poke_pallet_scene.c"] = pallet_scene.encode()
+        outputs["src/code/poke_pallet_room_header.c"] = pallet_room_head.encode()
         outputs["src/code/poke_pallet_room.c"] = pallet_room.encode()
         patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
               'ROM_NAME("POKEMON RED OOT")')
