@@ -116,7 +116,7 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               "    PokeOot_OnSceneEnter(this);\n}")
         patch("src/code/z_play.c",
               "        Play_Update(this);\n    }\n\n    PLAY_LOG(4583);",
-              "        Play_Update(this);\n"
+              "        if (!PokeOot_BattleActive()) Play_Update(this);\n"
               "        PokeOot_Update(this);\n"
               "    }\n\n    PLAY_LOG(4583);")
         patch("src/code/z_play.c",
@@ -128,7 +128,8 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
               '    include "$(BUILD_DIR)/src/code/z_play.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_core.o"\n'
               '    include "$(BUILD_DIR)/src/code/poke_save.o"\n'
-              '    include "$(BUILD_DIR)/src/code/poke_oot.o"')
+              '    include "$(BUILD_DIR)/src/code/poke_oot.o"\n'
+              '    include "$(BUILD_DIR)/src/code/poke_stadium_asset.o"')
         patch("src/makerom/rom_header.s", 'ROM_NAME("THE LEGEND OF ZELDA")',
               'ROM_NAME("POKEMON RED OOT")')
         patch("src/makerom/rom_header.s", 'GAME_ID("ZL")', 'GAME_ID("PO")')
@@ -171,6 +172,7 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
         copies = {
             "native/oot_conversion.c": "src/code/poke_oot.c",
             "native/oot_conversion.h": "include/poke_oot.h",
+            "native/stadium_asset.h": "include/stadium_asset.h",
             "include/poke.h": "include/poke.h",
             "src/core.c": "src/code/poke_core.c",
             "src/save.c": "src/code/poke_save.c",
@@ -183,6 +185,13 @@ def install(engine: Path, boot_mode: str = "poke") -> None:
             "src/core.c": "src/code/poke_core.c",
             "src/save.c": "src/code/poke_save.c",
         }
+    if boot_mode == "oot":
+        # Real Bulbasaur assets remain outside Git, under assets/private/.
+        # CI and the working test ROM link an original no-op implementation.
+        generated_asset = ROOT / "assets/private/stadium/001/stadium_bulbasaur_n64.c"
+        source = (generated_asset if generated_asset.is_file() else
+                  ROOT / "native/stadium_asset_stub.c")
+        outputs["src/code/poke_stadium_asset.c"] = source.read_bytes()
     for source, target in copies.items():
         outputs[target] = (ROOT / source).read_bytes()
     # Validate every write first: fail without partly applying an overlay.
