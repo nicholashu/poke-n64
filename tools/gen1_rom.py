@@ -550,4 +550,6 @@ def extract_pallet(rom: bytes) -> dict[str, Any]:
     # in the converter's source tree.
     from opening_rom import extract_opening_texts
     world["opening_texts"] = extract_opening_texts(rom, world["texts"])
+    from battle_rom import extract_battle
+    world["battle"] = extract_battle(rom)
     return world

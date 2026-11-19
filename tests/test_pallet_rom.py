@@ -213,6 +213,7 @@ class ImportCommandTests(unittest.TestCase):
             with patch.object(gen1_rom,'PROFILES',(profile,)), \
                  patch.object(gen1_rom,'extract_room',return_value={"fictional": True}), \
                  patch('opening_rom.extract_opening_texts',return_value=sample_dialogue), \
+                 patch('battle_rom.extract_battle',return_value={"species":[],"moves":[]}), \
                  redirect_stdout(io.StringIO()):
                 with patch.object(sys,'argv',argv+['--check']):
                     pallet_rom.main()

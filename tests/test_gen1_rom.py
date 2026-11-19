@@ -115,7 +115,8 @@ class RomIdentificationTests(unittest.TestCase):
         with patch.object(gen1_rom, "PROFILES", (profile,)), \
              patch.object(gen1_rom, "extract_room", return_value={"synthetic": True}), \
              patch("opening_rom.extract_opening_texts", return_value={"talks": {}, "ball": {},
-                                                                       "result": {}, "sources": {}}):
+                                                                       "result": {}, "sources": {}}), \
+             patch("battle_rom.extract_battle", return_value={"species":[],"moves":[]}):
             scene = gen1_rom.extract_pallet(data)
         self.assertTrue(scene["source"]["verified_profile"])
         self.assertEqual(scene["source"]["sha256"], hashlib.sha256(data).hexdigest())
@@ -128,7 +129,8 @@ class RomIdentificationTests(unittest.TestCase):
         with patch.object(gen1_rom, "PROFILES", (profile,)), \
              patch.object(gen1_rom, "extract_room", return_value={"synthetic": True}), \
              patch("opening_rom.extract_opening_texts", return_value={"talks": {}, "ball": {},
-                                                                       "result": {}, "sources": {}}):
+                                                                       "result": {}, "sources": {}}), \
+             patch("battle_rom.extract_battle", return_value={"species":[],"moves":[]}):
             scene = gen1_rom.extract_pallet(bytes(data))
         self.assertEqual(scene["source"]["game"], "blue")
         self.assertTrue(scene["source"]["symbols_reference"].endswith("/pokeblue.sym"))

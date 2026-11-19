@@ -341,7 +341,13 @@ def install(engine: Path, boot_mode: str = "poke", *,
                   ROOT / "native/stadium_asset_stub.c")
         outputs["src/code/poke_stadium_asset.c"] = source.read_bytes()
     for source, target in copies.items():
-        outputs[target] = (ROOT / source).read_bytes()
+        content = (ROOT / source).read_bytes()
+        if (source == "src/core.c" and imported is not None
+                and imported.get("world", {}).get("battle") is not None):
+            from battle_rom import apply_to_core
+            content = apply_to_core(content.decode(),
+                                    imported["world"]["battle"]).encode()
+        outputs[target] = content
     # Validate every write first: fail without partly applying an overlay.
     for path, desired in outputs.items():
         dest = engine / path
