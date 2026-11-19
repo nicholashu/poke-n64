@@ -36,7 +36,7 @@ jobs:
         run: python3 tools/check_native.py --require-mips --oot-conversion --engine build/engine-oot
       - name: Generate original Stadium fixture and compile native rendered asset
         run: |
-          python3 -c 'import sys; from pathlib import Path; sys.path[:0] = ["tools", "tests"]; from test_stadium_rig import animated_model; from stadium_n64 import emit_source; target = Path("assets/private/stadium/001/stadium_bulbasaur_n64.c"); target.parent.mkdir(parents=True, exist_ok=True); target.write_text(emit_source(animated_model())[0])'
+          python3 -c 'import sys; from pathlib import Path; sys.path[:0] = ["tools", "tests"]; from test_stadium_rig import animated_model; from stadium_n64 import emit_source; model = animated_model(); second = dict(model["primitives"][0]); second["texture"] = 65535; model["primitives"].append(second); target = Path("assets/private/stadium/001/stadium_bulbasaur_n64.c"); target.parent.mkdir(parents=True, exist_ok=True); target.write_text(emit_source(model)[0])'
           python3 tools/check_native.py --require-mips --oot-conversion --engine build/engine-oot-fixture
       - name: Check overlay and ROM input safeguards
         run: python3 tests/test_tools.py
