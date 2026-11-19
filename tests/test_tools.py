@@ -113,6 +113,9 @@ class OverlayTests(unittest.TestCase):
         self.assertIn("rayHeight < 126.0f", runtime)
         self.assertIn("rayHeight < 113.0f", runtime)
         self.assertIn("freeDistance < self->cameraDistance", runtime)
+        self.assertIn("Menus and battles end a stick gesture.", runtime)
+        self.assertIn("The saved position may be elsewhere.", runtime)
+        self.assertIn("if (self->wasInBattle) {", runtime)
         self.assertIn("static void PrintShort(", runtime)
 
     def test_control_boot_is_pristine_upstream_with_no_pokemon_overlay(self) -> None:
