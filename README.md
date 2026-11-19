@@ -134,6 +134,26 @@ make rom ROM="/absolute/path/to/oot-ntsc-1.2.z64"
 
 The helper validates the base image, checks the host toolchain, installs the project overlay into `build/engine`, then runs engine setup/build/compression and produces a BPS patch. It rejects unexpected edits in files it manages instead of resetting your checkout.
 
+### Native boot comparison (black-screen diagnostics)
+
+If the game ROM remains black even before the expected blue diagnostic frame, compare the patched engine with a control ROM. Both builds use your own OoT US NTSC 1.2 image and the same HackerOoT revision.
+
+```sh
+make rom-control-docker
+make rom-docker
+```
+
+Load the resulting images in **ares**, with the 4 MB Expansion Pak selected (8 MB total N64 RAM):
+
+| ROM | Expected result | Meaning |
+| --- | --- | --- |
+| `build/poke-n64-control.z64` | Original Zelda logo / title sequence | Engine, compiled patch and original state transitions reached gameplay |
+| `build/poke-n64.z64` | Solid blue screen before pressing A | Custom Pokémon state reaches framebuffer setup |
+
+The control ROM retains the original title transition but **still links our Pokémon code**, making it more informative than simply loading an unmodified Zelda cartridge. It uses cartridge game ID `PC` and a separate filename; don't reuse game saves between the two builds.
+
+If **both** are black, collect the final ROM header and emulator/debugger output to investigate build packaging or boot. If **only Pokémon** is black, concentrate on the custom state registration/initialization. A successful build or a MIPS object compile does not establish an emulator boot. Neither ROM has been tested against the user's local assets from this environment.
+
 ### Boot-screen diagnostic
 
 The native build now starts on a **solid blue screen** before displaying the 3D scene. This is intentional: it exercises the minimal N64 framebuffer-clear path without running the map renderer, helping distinguish an early boot/link issue from a scene-rendering issue.
