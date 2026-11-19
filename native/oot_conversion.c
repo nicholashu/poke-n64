@@ -198,13 +198,19 @@ static void PokeOot_DrawStadiumModel(PlayState* play) {
     f32 x, z;
     if (!PokeStadium_AssetAvailable() || player == NULL) return;
 
-    x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 165.0f;
-    z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 165.0f;
+    if (PokeOot_BattleActive()) {
+        x = sPokeOot.battleAnchor.x - 100.0f;
+        z = sPokeOot.battleAnchor.z + 145.0f;
+    } else {
+        x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 165.0f;
+        z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 165.0f;
+    }
 
     View_Apply(&play->view, VIEW_ALL);
     Matrix_Push();
     Matrix_Translate(x, player->actor.world.pos.y, z, MTXMODE_NEW);
-    Matrix_RotateY((f32)player->actor.shape.rot.y * (3.14159265f / 32768.0f),
+    Matrix_RotateY(PokeOot_BattleActive() ? 1.5707963f :
+                   (f32)player->actor.shape.rot.y * (3.14159265f / 32768.0f),
                    MTXMODE_APPLY);
 
     OPEN_DISPS(gfx);
@@ -213,6 +219,58 @@ static void PokeOot_DrawStadiumModel(PlayState* play) {
     PokeStadium_DrawBulbasaur(gfx, sPokeOot.attackFramesRemaining != 0,
                               sPokeOot.modelFrame);
     Matrix_Pop();
+}
+
+/* Temporary wild Rattata stand-in until its own Stadium model is exported.
+ * This is intentionally original geometry and does not ship copyrighted data.
+ */
+static void PokeOot_DrawWildProxy(PlayState* play) {
+    GraphicsContext* gfx = play->state.gfxCtx;
+    Vtx* vertices = GRAPH_ALLOC(gfx, sizeof(Vtx) * 8);
+    s32 i;
+    if (vertices == NULL || !PokeOot_BattleActive()) return;
+    for (i = 0; i < 8; i++) {
+        s32 top = (i & 2) != 0;
+        vertices[i].v.ob[0] = (i & 1) ? 27 : -27;
+        vertices[i].v.ob[1] = top ? 57 : 0;
+        vertices[i].v.ob[2] = (i & 4) ? 36 : -36;
+        vertices[i].v.flag = 0;
+        vertices[i].v.tc[0] = vertices[i].v.tc[1] = 0;
+        vertices[i].v.cn[0] = top ? 159 : 123;
+        vertices[i].v.cn[1] = top ? 114 : 84;
+        vertices[i].v.cn[2] = top ? 189 : 151;
+        vertices[i].v.cn[3] = 255;
+    }
+    Matrix_Push();
+    Matrix_Translate(sPokeOot.battleAnchor.x + 130.0f,
+                     sPokeOot.battleAnchor.y,
+                     sPokeOot.battleAnchor.z + 10.0f, MTXMODE_NEW);
+    OPEN_DISPS(gfx);
+    MATRIX_FINALIZE_AND_LOAD(POLY_OPA_DISP++, gfx);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gSPTexture(POLY_OPA_DISP++, 0, 0, 0, G_TX_RENDERTILE, G_OFF);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_SHADE, G_CC_SHADE);
+    gSPVertex(POLY_OPA_DISP++, vertices, 8, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 0, 1, 3, 0, 0, 3, 2, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 4, 6, 7, 0, 4, 7, 5, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 0, 2, 6, 0, 0, 6, 4, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 1, 5, 7, 0, 1, 7, 3, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 2, 3, 7, 0, 2, 7, 6, 0);
+    gSP2Triangles(POLY_OPA_DISP++, 0, 4, 5, 0, 0, 5, 1, 0);
+    CLOSE_DISPS(gfx);
+    Matrix_Pop();
+}
+
+static void PokeOot_DrawPanel(GraphicsContext* gfx, s32 x, s32 y, s32 w, s32 h) {
+    u32 color = GPACK_RGBA5551(21, 37, 47, 1);
+    OPEN_DISPS(gfx);
+    gDPPipeSync(OVERLAY_DISP++);
+    gDPSetCycleType(OVERLAY_DISP++, G_CYC_FILL);
+    gDPSetRenderMode(OVERLAY_DISP++, G_RM_NOOP, G_RM_NOOP2);
+    gDPSetFillColor(OVERLAY_DISP++, (color << 16) | color);
+    gDPFillRectangle(OVERLAY_DISP++, x, y, x + w - 1, y + h - 1);
+    gDPPipeSync(OVERLAY_DISP++);
+    CLOSE_DISPS(gfx);
 }
 
 void PokeOot_Draw(PlayState* play) {
