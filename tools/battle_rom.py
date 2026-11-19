@@ -97,12 +97,6 @@ def apply_to_core(core_source: str, battle: dict) -> str:
         if start<0 or stop<0:
             raise ValueError(f"Native core data table missing: {start_marker}")
         core_source=core_source[:start]+replacement+core_source[stop:]
-    species=['/* Generated from the supplied Red/Blue ROM. */',
-             'static const PokeSpeciesInfo species_table[] = {']
-    for e in battle["species"]:
-        species.append('    {%s, "%s", %s, %s, %s, %s},' % (
-            e["constant"],e["name"],e["type1"],e["type2"],
-            ','.join(str(x) for x in e["stats"]), '' ))
     # Emit numeric fields explicitly to make the initializer auditable.
     species=['/* Generated from the supplied Red/Blue ROM. */',
              'static const PokeSpeciesInfo species_table[] = {']
