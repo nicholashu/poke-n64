@@ -12,7 +12,7 @@ STADIUM_SPECIES ?= 1
 export STADIUM_SPECIES
 export STADIUM_ROM
 
-.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-oot-play play-oot test-rom rom-oot-e2e rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help
+.PHONY: all play test sanitize check-native check-native-docker check-native-oot-docker check-rom engine rom rom-docker rom-oot-docker rom-oot-play play-oot test-rom test-battle rom-oot-e2e rom-control-docker stadium-inspect stadium-export stadium-animated stadium-n64 clean help
 all: $(HOST)
 
 build:
@@ -80,6 +80,10 @@ ROM_SCENARIO ?= tests/rom_scenarios/pallet_smoke.json
 test-rom:
 	$(PYTHON) tools/retroarch_e2e.py $(ROM_SCENARIO)
 
+# Live battle: choose Bulbasaur, trigger wild Rattata, Fight/Tackle, assert HP drop.
+test-battle:
+	$(PYTHON) tools/retroarch_e2e.py tests/rom_scenarios/battle_smoke.json
+
 # Rebuild ROM then run the full native E2E scenario.
 rom-oot-e2e: rom-oot-docker
 	$(PYTHON) tools/retroarch_e2e.py $(ROM_SCENARIO)
@@ -116,6 +120,7 @@ help:
 	@echo 'make play-oot              Launch built OoT ROM with fresh SRAM/savestate dirs'
 	@echo 'make rom-oot-play          Build then clean-launch Pokémon in ParaLLEl N64'
 	@echo 'make test-rom              Automate live N64 boot, controller, screenshots and assertions'
+	@echo 'make test-battle           Real N64 Bulbasaur/Rattata Fight and HP regression'
 	@echo 'make rom-oot-e2e           Build ROM then run native N64 end-to-end scenario'
 	@echo 'make check-native-oot-docker Check native OoT integration without a ROM'
 	@echo 'make rom-control-docker    Build stock-boot diagnostic ROM'
